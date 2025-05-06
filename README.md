@@ -1,85 +1,119 @@
-# Tutorial de Uso – JUSTIFICATIVAS BP
+# Guia de Uso – App Justificativa BP
 
-Este aplicativo permite que você visualize, filtre e atualize as justificativas de registros de forma simples e interativa. A seguir, veja como navegar e utilizar as principais funcionalidades do app.
-
----
-
-## Visão Geral
-
-A aplicação possui duas abas principais:
-
-- **Justificativas:**  
-  Visualize e filtre os registros existentes com base em diversos critérios (Ano, Mês, Dec, Coletores, BPs, Status, Jobs e intervalo de datas).  
-  Você pode também exportar os dados filtrados para um arquivo Excel.
-![Tela com filtros aplicados](./assets/justificativa.png)
-
-
-
-- **Adicionar Justificativa:**  
-  Preencha ou atualize justificativas para os registros que necessitam de atenção.  
-  A navegação é paginada, facilitando o preenchimento de muitos formulários.
-![Teste](./assets/add_justificativa.png)
+> **Visão Geral:**  
+> O **App Justificativa BP** permite filtrar, visualizar, exportar e adicionar justificativas de forma rápida e centralizada, integrando-se ao Snowflake.
 
 ---
 
-## Como Utilizar a Aba "Justificativas"
+## 📥 1. Acesso à Ferramenta
 
-1. **Aplicando Filtros:**
-   - **Ano:** Selecione os anos desejados para a consulta.
-   - **Mês:** Escolha o(s) mês(es) (utilize o nome do mês, ex.: "JANEIRO", "FEVEREIRO", etc.).
-   - **Dec:** Selecione o decêndio com base no dia atual (1, 2 ou 3).
-   - **Coletores e BPs:** Use os menus para filtrar por Coletores e BPs disponíveis.
-   - **Status:** Selecione o status da pesquisa (através dos valores disponíveis).
-   - **Justificativa:** Escolha entre "Todos", "Preenchido" ou "Não Preenchido".
-   - **Jobs:** Caso haja, filtre pelos Jobs.
-
-   Além desses filtros, você pode informar um intervalo de datas (Data de Justificativa Inicial e Final) no formato `dd/mm/aaaa` para refinar os resultados.
-
-2. **Visualizando os Registros:**
-   - Após aplicar os filtros, a tabela será atualizada e exibirá os registros correspondentes.
-   - Os registros são ordenados por data e BP, facilitando a identificação dos dados mais recentes.
-
-3. **Exportando os Dados:**
-   - Clique no botão **"Baixar lista de justificativas"** para exportar a tabela filtrada para um arquivo Excel, permitindo que você salve ou compartilhe os dados conforme necessário.
+1. Abra seu navegador e acesse a URL do repositório de aplicaçoes:  
+   ```
+   https://spdorepositorioapps.streamlit.app/
+   ```
+2. Em seguida, coloque o usuário e senha de acesso a ferramenta.
+3. Após feito o login, navegue no menu lateral e escolha a opção "Coleta Tradicional"
+4. Selecione a ferramenta "App Justificativa"
+5. Selecione a opção "Acessar App" que dara acesso para o app (Tem também a opção "Tutorial", que da acesso a esse tutorial que está sendo utilizado)
+![Tutorial de Acesso](/projeto_just/assets/tutorial1.gif)
 
 ---
 
-## Como Utilizar a Aba "Adicionar Justificativa"
+## 🖥️ 2. Layout da Tela
 
-1. **Filtrando Registros para Preenchimento:**
-   - Selecione os filtros de **Ano**, **Mês** e **Dec** para visualizar os registros que precisam de justificativas.
-   - Você pode refinar ainda mais os registros utilizando os filtros de **Coletores** e **BPs**.
+![Visão Geral da Tela](/projeto_just/assets/tutorial2.png)
 
-2. **Preenchendo o Formulário:**
-   - Para cada registro listado, o formulário exibe informações como BP, Coletores, Formulário e a data da última atualização.
-   - Utilize os menus suspensos para:
-     - Selecionar o **Formulário Pesq.**,
-     - Escolher o **Status**,
-     - Indicar o **Coletor Pesq.**.
-   - Insira a justificativa no campo de texto (máximo de 500 caracteres).
-
-3. **Navegação e Paginação:**
-   - Caso haja muitos registros, utilize os botões **"◀️"** e **"▶️"** para navegar entre as páginas de formulários.
-   - O app indica a página atual e o total de páginas disponíveis.
-
-4. **Salvando as Justificativas:**
-   - Após preencher os campos obrigatórios para os registros desejados, clique no botão **"Salvar justificativas da página"** para enviar as atualizações.
-   - Uma mensagem de sucesso será exibida indicando quais registros foram salvos/atualizados.
-
-5. **Atualizando a Página:**
-   - Caso queira recarregar os registros ou atualizar os filtros, utilize o botão **"Recarregar página"**.
+- **Cabeçalho:** “JUSTIFICATIVAS BP” centralizado.  
+- **Barra lateral:** todos os filtros.  
+- **Corpo:** duas abas—“Justificativas” e “Adicionar Justificativa”.
 
 ---
 
-## Dicas de Uso
+## ⚙️ 3. Sidebar – Filtros Comuns
 
-- **Formato de Data:**  
-  Sempre informe as datas no formato `dd/mm/aaaa` para evitar erros no filtro por intervalo de datas.
+![Filtro Ano e Mês](/projeto_just/assets/tutorial3.gif)
 
-- **Campos Obrigatórios:**  
-  Certifique-se de preencher os campos obrigatórios (Formulário Pesq., Status e Coletor Pesq.) para que o registro seja salvo corretamente.
+### 3.1 Botão “🔄 Limpar Filtros”  
+- Reseta **todos** os campos da sidebar de uma vez.
 
-- **Filtros Dinâmicos:**  
-  Se nenhum registro for encontrado para os filtros aplicados, revise os critérios ou limpe alguns filtros para ampliar a busca.
+### 3.2 Filtros Gerais  
+| Filtro         | Descrição                                                                 |
+| -------------- | ------------------------------------------------------------------------- |
+| **Ano**        | Selecione um ou mais anos disponíveis.                                    |
+| **Mês**        | Em português (JANEIRO, FEVEREIRO, …).                                     |
+| **Decêndio**   | 1 (dias 1–10), 2 (11–20) ou 3 (21–fim do mês).                             |
+| **Coletor**    | Nome do coletor BP.                                                       |
+| **BP**         | Identificação do BP.                                                      |
+| **Formulário** | Tipo de formulário BP.                                                    |
+| **Status**     | Status de pesquisa (e.g. “AINDA NÃO TRABALHADO”, “CONCLUÍDA”).             |
+
+---
+
+## 🔎 4. Sidebar – Filtros da Aba “Visualizar Justificativas”
+
+![Filtro Justificativa e Datas](/projeto_just/assets/tutorial3.gif)
+
+### 4.1 Justificativa  
+- **Todos**: mostra com e sem texto.  
+- **Preenchido**: apenas registros com justificativa.  
+- **Não Preenchido**: sem texto.
+
+### 4.2 Jobs  
+- Multiseleção de um ou mais jobs (campo “JOBS” no banco).
+
+### 4.3 Datas  
+- **Data Inicial:** formato **DD/MM/AAAA**.  
+- **Data Final:** formato **DD/MM/AAAA**.  
+
+---
+
+## 📊 5. Aba “Justificativas”
+
+![Aba Justificativas](/projeto_just/assets/tutorial4.gif)
+
+1. **Aplicação dos filtros:** todos os controles são lidos da sidebar.  
+2. **Indicadores:**  
+   ```text
+   Total: 1234  |  Trabalhados: 1000  |  Não trabalhados: 234
+   ```  
+3. **Grid de Resultados:**  
+   - **Colunas:**  
+     ```text
+     ANO | MES | DEC | BP | DATA_JUST | COLETOR_BP | FORMULARIO_BP 
+     | JOBS | COLETOR_PESQ | FORMULARIO_PESQ | STATUS_PESQ | JUSTIFICATIVA
+     ```  
+   - Altura fixa e rolagem interna.  
+   - Paginação automática por setas ◀️ ▶️ no rodapé da grid.
+
+4. **Exportar Excel:**  
+   - Clique em **“Baixar lista de justificativas”** para gerar um arquivo `.xlsx` com todos os registros filtrados.
+
+---
+
+## ✍️ 6. Aba “Adicionar Justificativa”
+
+![Aba Adicionar Justificativa](/projeto_just/assets/tutorial5.gif)
+
+1. **Filtros aplicados:** reaplica todos os filtros comuns da sidebar (Ano, Mês, Decêndio etc.).  
+2. **Lista de BPs pendentes:**  
+   - Agrupa por **BP + Mês** e exibe apenas registros com `STATUS_PESQ ≠ CONCLUÍDA`.  
+3. **Formulário Inline:** para cada BP listado:  
+   - **Formulário Pesq.:** lista de formulários disponíveis.  
+   - **Status:** lista de status de pesquisa.  
+   - **Coletor Pesq.:** lista de coletores.  
+   - **Justificativa:** campo de texto (até 500 caracteres).  
+4. **Salvar Justificativa:**  
+   - Atualiza (ou insere) o registro em um banco de dados dedicado.  
+   - Exibe **“Justificativa salva com sucesso!”** e limpa o form naquele BP.
+
+![Exemplo de Uso](/projeto_just/assets/tutorial6.gif)
+---
+
+## 💡 7. Boas Práticas
+
+- **Selecione primeiro** todos os filtros antes de navegar entre as abas.  
+- Use **“🔄 Limpar Filtros”** sempre que quiser reiniciar suas consultas.  
+- Para períodos longos, ajuste com cuidado a **Data Inicial** e **Data Final**.  
+- Navegue entre páginas usando as setas ◀️ ▶️ na aba “Justificativas”.  
 
 ---
