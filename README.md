@@ -15,13 +15,13 @@
 3. Após feito o login, navegue no menu lateral e escolha a opção "Coleta Tradicional"
 4. Selecione a ferramenta "App Justificativa"
 5. Selecione a opção "Acessar App" que dara acesso para o app (Tem também a opção "Tutorial", que da acesso a esse tutorial que está sendo utilizado)
-![Tutorial de Acesso](/projeto_just/assets/tutorial1.gif)
+![Tutorial de Acesso](assets/tutorial1.gif)
 
 ---
 
 ## 🖥️ 2. Layout da Tela
 
-![Visão Geral da Tela](/projeto_just/assets/tutorial2.png)
+![Visão Geral da Tela](assets/tutorial2.png)
 
 - **Cabeçalho:** “JUSTIFICATIVAS BP” centralizado.  
 - **Barra lateral:** todos os filtros.  
