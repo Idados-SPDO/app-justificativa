@@ -69,7 +69,7 @@
 
 ## 📊 5. Aba “Justificativas”
 
-![Aba Justificativas](/projeto_just/assets/tutorial4.gif)
+![Aba Justificativas](assets/tutorial4.gif)
 
 1. **Aplicação dos filtros:** todos os controles são lidos da sidebar.  
 2. **Indicadores:**  
