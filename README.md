@@ -31,7 +31,7 @@
 
 ## ⚙️ 3. Sidebar – Filtros Comuns
 
-![Filtro Ano e Mês](/projeto_just/assets/tutorial3.gif)
+![Filtro Ano e Mês](assets/tutorial3.gif)
 
 ### 3.1 Botão “🔄 Limpar Filtros”  
 - Reseta **todos** os campos da sidebar de uma vez.
@@ -51,7 +51,7 @@
 
 ## 🔎 4. Sidebar – Filtros da Aba “Visualizar Justificativas”
 
-![Filtro Justificativa e Datas](/projeto_just/assets/tutorial3.gif)
+![Filtro Justificativa e Datas](assets/tutorial3.gif)
 
 ### 4.1 Justificativa  
 - **Todos**: mostra com e sem texto.  
@@ -92,7 +92,7 @@
 
 ## ✍️ 6. Aba “Adicionar Justificativa”
 
-![Aba Adicionar Justificativa](/projeto_just/assets/tutorial5.gif)
+![Aba Adicionar Justificativa](assets/tutorial5.gif)
 
 1. **Filtros aplicados:** reaplica todos os filtros comuns da sidebar (Ano, Mês, Decêndio etc.).  
 2. **Lista de BPs pendentes:**  
@@ -106,7 +106,7 @@
    - Atualiza (ou insere) o registro em um banco de dados dedicado.  
    - Exibe **“Justificativa salva com sucesso!”** e limpa o form naquele BP.
 
-![Exemplo de Uso](/projeto_just/assets/tutorial6.gif)
+![Exemplo de Uso](assets/tutorial6.gif)
 ---
 
 ## 💡 7. Boas Práticas
