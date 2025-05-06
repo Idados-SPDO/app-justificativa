@@ -6,15 +6,53 @@ from io import BytesIO
 import concurrent.futures
 import re
 import math
-
 from snowflake.snowpark import Session
 
-connection_parameters = st.secrets["snowflake"]
+st.set_page_config(
+    page_title="App Justificativa",   
+    page_icon="📄",                    
+    layout="wide"                      
+)
 
-session = Session.builder.configs(connection_parameters).create()
+@st.cache_resource
+def get_session():
+    return Session.builder.configs(st.secrets["snowflake"]).create()
+
+session = get_session()
 
 st.markdown("<h1 style='text-align: center;'>JUSTIFICATIVAS BP</h1>", unsafe_allow_html=True)
+st.markdown(
+    """
+    <style>
+      /* ===== Scrollbar ===== */
+      ::-webkit-scrollbar {
+        width: 12px;
+        height: 12px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #f0f0f0;
+      }
+      ::-webkit-scrollbar-thumb {
+        background-color: #888;
+        border-radius: 6px;
+        border: 3px solid #f0f0f0;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background-color: #555;
+      }
 
+      /* ===== DataFrame container ===== */
+      /* Seleciona o grid interno que o st.dataframe renderiza */
+      .stDataFrame > div[role="grid"] {
+        width: 200px !important;      /* 90% da área disponível */
+        margin: 0 auto !important;  /* centraliza horizontalmente */
+        height: 800px !important;   /* define uma altura fixa */
+
+      }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 @st.cache_data()
 def fetch_data(sql):
     results = session.sql(sql).collect()
@@ -23,6 +61,7 @@ def fetch_data(sql):
     return pd.DataFrame()
 
 # Função para carregar os dados de forma concorrente
+@st.cache_data(show_spinner=True)
 def load_data_concurrently():
     queries = {
         "df_just_geral": "SELECT * FROM BASES_SPDO.DB_APP_JUST_BP.TB_JUST_GERAL",
@@ -37,6 +76,21 @@ def load_data_concurrently():
             key = future_to_key[future]
             data_results[key] = future.result()
     return data_results
+
+@st.cache_data(show_spinner=True)
+def load_just_geral():
+    sql = "SELECT * FROM BASES_SPDO.DB_APP_JUST_BP.TB_JUST_GERAL"
+    return session.sql(sql).to_pandas()
+
+@st.cache_data(show_spinner=True)
+def load_just_status():
+    sql = "SELECT * FROM BASES_SPDO.DB_APP_JUST_BP.TB_JUST_STATUS"
+    return session.sql(sql).to_pandas()
+
+@st.cache_data(show_spinner=True)
+def load_just_jobs():
+    sql = "SELECT * FROM BASES_SPDO.DB_APP_JUST_BP.TB_JUST_JOBS"
+    return session.sql(sql).to_pandas()
 
 def create_list(df, coluna):
     if df is not None and not df.empty:
@@ -53,68 +107,19 @@ def df_to_list(df, coluna, label, placeholder, key=""):
 
 def render_justificativas_tab(df_geral, df_status, df_jobs):
     st.markdown("### Visualizar Justificativas com Filtros")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        options_ano = create_list(df_geral, "ANO")
-        ano_atual = datetime.now().year
-        default_ano = [ano_atual] if ano_atual in options_ano else []
-        filter_ano = st.multiselect(
-            "Ano:",
-            options=options_ano,
-            default=default_ano,
-            placeholder="Selecione os anos para consulta",
-            key="filter_ano"
-        )
-        
-    with col2:
-        options_mes = create_list(df_geral, "MES")
-        # Dicionário para mapear número para nome do mês (em caixa alta, conforme seu banco)
-        meses = {
-            1: "JANEIRO",
-            2: "FEVEREIRO",
-            3: "MARCO",
-            4: "ABRIL",
-            5: "MAIO",
-            6: "JUNHO",
-            7: "JULHO",
-            8: "AGOSTO",
-            9: "SETEMBRO",
-            10: "OUTUBRO",
-            11: "NOVEMBRO",
-            12: "DEZEMBRO"
-        }
-        current_date = datetime.now()
-        mes_atual = meses[current_date.month]
-        default_mes = [mes_atual] if mes_atual in options_mes else []
-        filter_mes = st.multiselect(
-            "Mês:",
-            options=options_mes,
-            default=default_mes,
-            placeholder="Selecione os meses para consulta",
-            key="filter_mes"
-        )
+    
+    filter_ano = st.session_state.get("filter_ano", [])
+    filter_mes = st.session_state.get("filter_mes", [])
+    filter_dec = st.session_state.get("filter_dec", [])
+    filter_coletor = st.session_state.get("filter_coletor", [])
+    filter_bp       = st.session_state.get("filter_bp", [])
+    filter_form     = st.session_state.get("filter_form", [])
+    filter_status   = st.session_state.get("filter_status", [])
+    filter_just = st.session_state.get("filter_just", [])
+    filter_jobs = st.session_state.get("filter_jobs", [])
 
-    with col3:
-        if not df_geral.empty and "DEC" in df_geral.columns:
-            all_dec = sorted(set(";".join(df_geral["DEC"].dropna().astype(str)).split(";")))
-        else:
-            all_dec = []
-        current_day = datetime.now().day
-        if current_day <= 10:
-            default_dec = "1"
-        elif current_day <= 20:
-            default_dec = "2"
-        else:
-            default_dec = "3"
-        default_dec = [default_dec] if default_dec in all_dec else []
-        filter_dec = st.multiselect(
-            "Dec:", 
-            options=all_dec, 
-            default=default_dec,
-            placeholder="Selecione os decêndios para consulta.", 
-            key="filter_dec"
-        )
-    # Cria um DataFrame filtrado para as demais listas
+
+ # Cria um DataFrame filtrado para as demais listas
     df_filtered = df_geral.copy()
     if filter_ano:
         df_filtered = df_filtered[df_filtered["ANO"].isin(filter_ano)]
@@ -125,26 +130,12 @@ def render_justificativas_tab(df_geral, df_status, df_jobs):
             lambda x: any(d in x.split(";") for d in filter_dec) if isinstance(x, str) else False
         )]
         
-    col1, col2 = st.columns(2)
-    with col1:
-        filter_coletor = df_to_list(df_filtered, "COLETOR_BP", "Coletor", "Selecione os Coletores para consulta.", "filter_coletor")
-    with col2:
-        filter_bp = df_to_list(df_filtered, "BP", "BPs", "Selecione os BPs para consulta.", "filter_bp")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        filter_status = df_to_list(df_status, "STATUS", "Status", "Selecione os Status para consulta.", "filter_status")
-    with col2:
-        filter_just = st.selectbox("Justificativa:", ["Todos", "Preenchido", "Não Preenchido"], key="filter_just")
-    with col3:
-        filter_jobs = df_to_list(df_jobs, "JOBS", "Jobs", "Selecione os Jobs para consulta.", "filter_jobs")
     
     # Conversão para datetime e formatação com hora (DD/MM/YYYY HH:MM:SS)
     df_geral["DATA_JUST"] = pd.to_datetime(df_geral["DATA_JUST"], dayfirst=True)
     
-    col_date1, col_date2 = st.columns(2)
-    data_inicial_str = col_date1.text_input("Data de Justificativa Inicial (dd/mm/aaaa):", placeholder="DD/MM/AAAA")
-    data_final_str = col_date2.text_input("Data de Justificativa Final (dd/mm/aaaa):", placeholder="DD/MM/AAAA")
+    data_inicial_str = st.session_state.get("filter_data_inicial", "")
+    data_final_str   = st.session_state.get("filter_data_final", "")
 
     if df_geral is not None and not df_geral.empty:
         df_form = df_geral.copy()
@@ -154,6 +145,8 @@ def render_justificativas_tab(df_geral, df_status, df_jobs):
             df_form = df_form[df_form["JOBS"].apply(
                 lambda x: any(d in x.split(";") for d in filter_jobs) if isinstance(x, str) else False
             )]
+        if filter_form:
+            df_form = df_form[df_form["FORMULARIO_BP"].isin(filter_form)]
         if filter_coletor:
             df_form = df_form[df_form["COLETOR_BP"].isin(filter_coletor)]
         if filter_status:
@@ -166,10 +159,21 @@ def render_justificativas_tab(df_geral, df_status, df_jobs):
             df_form = df_form[df_form["DEC"].apply(
                 lambda x: any(d in x.split(";") for d in filter_dec) if isinstance(x, str) else False
             )]
-        if filter_just == "Preenchido":
-            df_form = df_form[df_form["JUSTIFICATIVA"].notna() & (df_form["JUSTIFICATIVA"] != "")]
-        elif filter_just == "Não Preenchido":
-            df_form = df_form[df_form["JUSTIFICATIVA"].isna() | (df_form["JUSTIFICATIVA"] == "")]
+        if filter_just:
+            if "Todos" not in filter_just:
+                mask_just = pd.Series(False, index=df_form.index)
+                if "Preenchido" in filter_just:
+                    mask_just |= (
+                        df_form["JUSTIFICATIVA"].notna()
+                        & (df_form["JUSTIFICATIVA"].str.strip() != "")
+                    )
+                if "Não Preenchido" in filter_just:
+                    mask_just |= (
+                        df_form["JUSTIFICATIVA"].isna()
+                        | (df_form["JUSTIFICATIVA"].str.strip() == "")
+                    )
+
+                df_form = df_form[mask_just]
         date_pattern = re.compile(r"^\d{2}/\d{2}/\d{4}$")
         try:
             if data_inicial_str:
@@ -181,7 +185,8 @@ def render_justificativas_tab(df_geral, df_status, df_jobs):
                 if not date_pattern.match(data_final_str):
                     raise ValueError("Formato inválido")
                 end_date = datetime.strptime(data_final_str, "%d/%m/%Y")
-                df_form = df_form[df_form["DATA_JUST"] <= pd.Timestamp(end_date)]
+                end_dt = pd.Timestamp(end_date) + pd.Timedelta(days=1)
+                df_form = df_form[df_form["DATA_JUST"] < end_dt]
         except ValueError:
             st.error("Formato de data inválido. Use apenas números e '/' no formato dd/mm/aaaa.")
 
@@ -200,13 +205,17 @@ def render_justificativas_tab(df_geral, df_status, df_jobs):
         else:
             df_form["BP"] = ""
 
-        
-        
-        st.write("Total:", df_form.shape[0])
+       
+        total = df_form.shape[0]
+        nao_trabalhados = df_form[df_form["STATUS_PESQ"] == "AINDA NÃO TRABALHADO"].shape[0]
+        trabalhados = total - nao_trabalhados
+
+        st.write(f"Total: **{total}**  |  Trabalhados: **{trabalhados}**  |  Não trabalhados: **{nao_trabalhados}**")
+
         # Reordenando as colunas
         colunas = [
             "ANO", "MES", "DEC", "BP", "DATA_JUST", "COLETOR_BP", "FORMULARIO_BP",
-            "JOBS", "COLETOR_PESQ", "FORMULARIO_PESQ", "STATUS_PESQ", "JUSTIFICATIVA", "ID_JUST"
+            "JOBS", "COLETOR_PESQ", "FORMULARIO_PESQ", "STATUS_PESQ", "JUSTIFICATIVA"
         ]
         
         
@@ -232,65 +241,20 @@ def render_justificativas_tab(df_geral, df_status, df_jobs):
     else:
         st.error("Nenhum dado encontrado.")
 
+
 def render_adicionar_justificativa_tab(df_geral, df_status):
     st.markdown("### Formulário de Justificativa")
-    
-    # Inicialmente, obtenha as listas de Ano e Mês (essas podem vir do df completo)
-    ano_list = create_list(df_geral, "ANO")
-    mes_list = create_list(df_geral, "MES")
-    
-    # Dicionário para mapear o número do mês para o nome em português (caixa alta)
-    meses = {
-        1: "JANEIRO",
-        2: "FEVEREIRO",
-        3: "MARÇO",
-        4: "ABRIL",
-        5: "MAIO",
-        6: "JUNHO",
-        7: "JULHO",
-        8: "AGOSTO",
-        9: "SETEMBRO",
-        10: "OUTUBRO",
-        11: "NOVEMBRO",
-        12: "DEZEMBRO"
-    }
-    
-    current_date = datetime.now()
-    dia_atual = current_date.day
-    mes_atual = meses[current_date.month]
-    ano_atual = current_date.year
 
-    if dia_atual <= 10:
-        default_dec = ["1"]
-    elif dia_atual <= 20:
-        default_dec = ["2"]
-    else:
-        default_dec = ["3"]
-    default_mes = [mes_atual] if mes_atual in mes_list else []
-    default_ano = [ano_atual] if ano_atual in ano_list else []
-    
     col1, col2, col3 = st.columns(3)
-    
-    # Seleção de Ano, Mês e Dec para filtrar os dados
-    selected_anos = col1.multiselect(
-        "Ano:",
-        options=ano_list,
-        default=default_ano,
-        help="Selecione um ou mais Anos para adicionar justificativas."
-    )
-    selected_mes = col2.multiselect(
-        "Mês:",
-        options=mes_list,
-        default=default_mes,
-        help="Selecione um ou mais Meses para adicionar justificativas."
-    )
-    selected_decs = col3.multiselect(
-        "Decs:",
-        options=["1", "2", "3"],
-        default=default_dec,
-        help="Filtre por um ou mais decêndios."
-    )
-    
+
+    selected_anos   = st.session_state.get("filter_ano", [])
+    selected_mes    = st.session_state.get("filter_mes", [])
+    selected_decs   = st.session_state.get("filter_dec", [])
+    selected_colectors= st.session_state.get("filter_coletor", [])
+    selected_bps     = st.session_state.get("filter_bp", [])
+    selected_forms   = st.session_state.get("filter_form", [])
+    selected_status_pesq = st.session_state.get("filter_status", [])
+
     # Filtrar o df_geral com base nos filtros de Ano, Mês e Dec
     df_filtered = df_geral.copy()
     if selected_anos:
@@ -310,28 +274,16 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
     # Outras listas que não dependem dos filtros continuam vindo do df original
     option_list = create_list(df_geral, "FORMULARIO_BP")
     status_justify_list = create_list(df_status, "STATUS")
-    
-    col1_under, col2_under = st.columns(2)
-    selected_colectors = col1_under.multiselect(
-        "Coletores:",
-        options=colector_list,
-        default=[],
-        help="Filtre por um ou mais coletores."
-    )
-    selected_bps = col2_under.multiselect(
-        "BPs:",
-        options=bp_list,
-        default=[],
-        help="Filtre por um ou mais BPs."
-    )
-    
+
     # Agrega todos os filtros (inclusive os de Ano, Mês e Dec) para filtrar o DataFrame de formulários
     selected_filters = [
         ("ANO", selected_anos),
         ("MES", selected_mes),
         ("DEC", selected_decs),
         ("COLETOR_BP", selected_colectors),
-        ("BP", selected_bps)
+        ("BP", selected_bps),
+        ("FORMULARIO_BP", selected_forms),
+        ("STATUS_PESQ", selected_status_pesq),
     ]
     
     # Se nenhum filtro for selecionado, emite aviso
@@ -340,6 +292,18 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
         return
 
     df_form = df_geral.copy()
+    def _save_and_flag(idx: int, sql_to_run: str):
+        session.sql(sql_to_run).collect()
+        st.cache_data.clear()
+        for widget_key in [
+            f"form_pesq-{idx}",
+            f"form_status-{idx}",
+            f"form_coletor-{idx}",
+            f"form_just-{idx}"
+        ]:
+            st.session_state[widget_key] = "" 
+        st.session_state[f"saved_{idx}"] = True
+
     for coluna, selected in selected_filters:
         if not selected:
             continue
@@ -361,27 +325,33 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
         st.info("Não há formulários para preencher.")
         return
 
-    st.write("Total:", df_latest.shape[0])
-    
-    page_size = 50
-    st.markdown("#### Listagem:")
-    total_pages = math.ceil(len(df_latest) / page_size) if len(df_latest) > 0 else 1
+    total = df_form.shape[0]
+    nao_trabalhados = df_form[df_form["STATUS_PESQ"] == "AINDA NÃO TRABALHADO"].shape[0]
+    trabalhados = total - nao_trabalhados
 
+    st.write(f"Total: **{total}**  |  Trabalhados: **{trabalhados}**  |  Não trabalhados: **{nao_trabalhados}**")
+
+    page_size = 50
+    st.markdown("#### Relação de BPs:")
+    total_pages = max(1, math.ceil(len(df_latest) / page_size))
+    
     if "current_page_setas" not in st.session_state:
         st.session_state.current_page_setas = 1
+    
+    if st.session_state.current_page_setas > total_pages:
+        st.session_state.current_page_setas = total_pages
+        st.rerun()
     
     cols = st.columns([2, 3, 1])
     
     if cols[0].button("◀️", key="prev_page"):
-        if st.session_state.current_page_setas > 1:
-            st.session_state.current_page_setas -= 1
-    
-    const = f"Página **{st.session_state.current_page_setas}** de **{total_pages}**"
-    st.write(const)
-    
+        st.session_state.current_page_setas -= 1
+
     if cols[2].button("▶️", key="next_page"):
-        if st.session_state.current_page_setas < total_pages:
-            st.session_state.current_page_setas += 1
+        st.session_state.current_page_setas += 1
+        
+    st.write(f"Página **{st.session_state.current_page_setas}** de **{total_pages}**")
+
     
     current_page = st.session_state.current_page_setas
     start_index = (current_page - 1) * page_size
@@ -392,105 +362,226 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
     df_form["DATA_JUST"] = df_form["DATA_JUST"].dt.strftime('%d/%m/%Y %H:%M:%S')
     
     # Agrupa os campos de cada formulário em um st.form com clear_on_submit=True
-    with st.form("justificativa_form", clear_on_submit=True, border = False):
-        for index, row in df_page.iterrows():
-            ultima_atualizacao = (
-                pd.to_datetime(row['DATA_JUST'], utc=True)
-                .strftime("%d/%m/%Y %H:%M:%S")
-                if pd.notna(row['DATA_JUST']) else "Sem data"
-            )
-    
+    for index, row in df_page.iterrows():
+        ultima_atualizacao = (
+            pd.to_datetime(row['DATA_JUST'], utc=True)
+            .strftime("%d/%m/%Y %H:%M:%S")
+            if pd.notna(row['DATA_JUST']) else "Sem data"
+        )
+        ultima_just = (
+            row['JUSTIFICATIVA'] if pd.notna(row['JUSTIFICATIVA']) else "Sem justificativa"
+        )
+        
+        with st.container(border=True):
             st.markdown(
-                f"- **BP:** {row['BP']} | **Coletor:** {row['COLETOR_BP']} | **Formulário:** {row['FORMULARIO_BP']} | "
-                f"**Mês:** {row['MES']} | **Dec:** {row['DEC']} | **Última atualização:** {ultima_atualizacao}"
+                f"**BP:** {row['BP']} | **Coletor:** {row['COLETOR_BP']} | "
+                f"**Formulário:** {row['FORMULARIO_BP']} | **Mês:** {row['MES']} | "
+                f"**Dec:** {row['DEC']} | **Última atualização:** {ultima_atualizacao} | "
+                f"**Justificativa atual:** {ultima_just}"
             )
             col1, col2, col3 = st.columns(3)
-            col1.selectbox("Formulário Pesq.:", options=["", *option_list], key=f"form_pesq-{index}")
-            col2.selectbox("Status:", options=["", *status_justify_list], key=f"form_status-{index}")
-            col3.selectbox("Coletor Pesq.:", options=["", *colector_list], key=f"form_coletor-{index}")
-            st.text_area("Justificativa:", max_chars=500, key=f"form_just-{index}")
-        
-        submit = st.form_submit_button("Salvar justificativas da página")
-    
-    if submit:
-        # Define o fuso horário correto
-        fuso_horario = pytz.timezone("America/Sao_Paulo")
-        current_time = datetime.now().astimezone(fuso_horario)
-        current_date_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
-    
-        sql_statements = []
-        bp_save_list = []
-        saved_count = 0
-        for index, row in df_page.iterrows():
-            form_pesq_val = st.session_state.get(f"form_pesq-{index}", "")
-            form_status_val = st.session_state.get(f"form_status-{index}", "")
-            form_coletor_val = st.session_state.get(f"form_coletor-{index}", "")
-            form_just_val = st.session_state.get(f"form_just-{index}", "")
-            if not (form_pesq_val or form_status_val or form_coletor_val):
-                continue
+            form_pesq_val = col1.selectbox(
+                "Formulário Pesq.:", options=["", *option_list],
+                key=f"form_pesq-{index}"
+            )
+            form_status_val = col2.selectbox(
+                "Status:", options=["", *status_justify_list],
+                key=f"form_status-{index}"
+            )
+            form_coletor_val = col3.selectbox(
+                "Coletor Pesq.:", options=["", *colector_list],
+                key=f"form_coletor-{index}"
+            )
+            form_just_val = st.text_area(
+                "Justificativa:", max_chars=500, key=f"form_just-{index}"
+            )
+            just_clean = form_just_val.replace("'", "''")
+            fuso  = pytz.timezone("America/Sao_Paulo")
+            agora = datetime.now().astimezone(fuso).strftime("%Y-%m-%d %H:%M:%S")
             
-            if pd.isna(row["DATA_JUST"]) or row["DATA_JUST"] in ["", None]:
-                update_sql = f"""
-                    UPDATE BASES_SPDO.DB_APP_JUST_BP.TB_JUST_GERAL
-                    SET DATA_JUST = '{current_date_str}',
-                        COLETOR_PESQ = '{form_coletor_val}',
-                        FORMULARIO_PESQ = '{form_pesq_val}',
-                        STATUS_PESQ = '{form_status_val}',
-                        JUSTIFICATIVA = '{form_just_val}',
-                        ID_JUST = 1
-                    WHERE BP = '{row['BP']}'
-                      AND MES = '{row['MES']}'
-                      AND DATA_JUST IS NULL
-                """
-                sql_statements.append(update_sql)
-                st.cache_data.clear()
+            if pd.isna(row["DATA_JUST"]):
+                        sql = f"""
+                        UPDATE BASES_SPDO.DB_APP_JUST_BP.TB_JUST_GERAL
+                           SET DATA_JUST = '{agora}',
+                               COLETOR_PESQ = '{form_coletor_val}',
+                               FORMULARIO_PESQ = '{form_pesq_val}',
+                               STATUS_PESQ = '{form_status_val}',
+                               JUSTIFICATIVA = '{just_clean}',
+                               ID_JUST = 1
+                         WHERE BP = '{row['BP']}'
+                           AND MES = '{row['MES']}'
+                           AND DATA_JUST IS NULL
+                        """
             else:
-                new_id = 0 if pd.isna(row.get("ID_JUST")) or row["ID_JUST"] in ["", None] else int(row["ID_JUST"]) + 1
-                insert_sql = f"""
-                    INSERT INTO BASES_SPDO.DB_APP_JUST_BP.TB_JUST_GERAL
-                    (ANO, MES, DATA_JUST, DEC, BP, COLETOR_BP, FORMULARIO_BP, JOBS, COLETOR_PESQ, FORMULARIO_PESQ, STATUS_PESQ, JUSTIFICATIVA, ID_JUST)
-                    VALUES
-                    ('{row["ANO"]}', '{row["MES"]}', '{current_date_str}', '{row['DEC']}', '{row['BP']}', '{row['COLETOR_BP']}',
-                     '{row['FORMULARIO_BP']}', '{row['JOBS']}', '{form_coletor_val}', '{form_pesq_val}', '{form_status_val}', '{form_just_val}', '{new_id}')
-                """
-                sql_statements.append(insert_sql)
-                st.cache_data.clear()
-            saved_count += 1
-            bp_save_list.append(row['BP'])
-        
-        if saved_count == 0:
-            st.warning("Nenhum registro foi salvo. Por favor, preencha os campos obrigatórios: Formulário Pesq., Status e Coletor Pesq.")
-        else:
-            for sql_cmd in sql_statements:
-                session.sql(sql_cmd).collect()
-                
-            st.success("Justificativas salvas com sucesso!")
-            st.success(f"Justificativas salvas/atualizadas: {bp_save_list}")
-    
-    if st.button("Recarregar página"):
-        st.rerun()
+                        new_id = 1 + (int(row.get("ID_JUST")) if pd.notna(row.get("ID_JUST")) else 0)
+                        sql = f"""
+                        INSERT INTO BASES_SPDO.DB_APP_JUST_BP.TB_JUST_GERAL
+                        (ANO, MES, DATA_JUST, DEC, BP, COLETOR_BP, FORMULARIO_BP, JOBS,
+                         COLETOR_PESQ, FORMULARIO_PESQ, STATUS_PESQ, JUSTIFICATIVA, ID_JUST)
+                        VALUES
+                        ('{row["ANO"]}', '{row["MES"]}', '{agora}', '{row["DEC"]}',
+                         '{row["BP"]}', '{row["COLETOR_BP"]}', '{row["FORMULARIO_BP"]}',
+                         '{row["JOBS"]}', '{form_coletor_val}', '{form_pesq_val}',
+                         '{form_status_val}', '{just_clean}', '{new_id}')
+                        """
 
+            
+            st.button(
+                "Salvar justificativa",
+                key=f"submit_{index}",
+                on_click=_save_and_flag,
+                args=(index, sql)
+            )
+            if st.session_state.get(f"saved_{index}", False):
+                st.success("Justificativa salva com sucesso!")
+                st.session_state.pop(f"saved_{index}")
+
+            st.session_state[f"saved_{index}"] = False
+            if any([
+                st.session_state[f"form_pesq-{index}"],
+                st.session_state[f"form_status-{index}"],
+                st.session_state[f"form_coletor-{index}"],
+                st.session_state[f"form_just-{index}"]
+            ]) and not st.session_state.get(f"submit-{index}", False):
+                st.warning("Você preencheu campos, mas ainda não salvou a justificativa!")
+
+                    
 
 # ================================
 # Execução Principal
 # ================================
-session.sql("USE WAREHOUSE SPDO_APPS").collect()
-    
-with st.spinner("Carregando dados..."):
-    data = load_data_concurrently()
-    
-df_just_geral = data.get("df_just_geral", pd.DataFrame())
-#df_just_bps = data.get("df_just_bps", pd.DataFrame())
-#df_just_coletores = data.get("df_just_coletores", pd.DataFrame())
-df_just_status = data.get("df_just_status", pd.DataFrame())
-df_just_jobs = data.get("df_just_jobs", pd.DataFrame())
+session.sql("USE WAREHOUSE SPDO").collect()
 
-tabs = ["Justificativas", "Adicionar Justificativa"]
-active_tabs = st.tabs(tabs)
-    
-for i, tab in enumerate(tabs):
-    with active_tabs[i]:
-        if tab == "Justificativas":
-            render_justificativas_tab(df_just_geral, df_just_status, df_just_jobs)
-        elif tab == "Adicionar Justificativa":
-            render_adicionar_justificativa_tab(df_just_geral, df_just_status)
+st.logo('assets/logo_ibre.png')
+
+df_geral  = load_just_geral() 
+df_status = load_just_status() 
+df_jobs   = load_just_jobs() 
+
+def clear_filters():
+    for key in ["filter_mes","filter_dec",
+        "filter_coletor","filter_bp","filter_form","filter_status",
+        "filter_just","filter_jobs",
+        "filter_data_inicial","filter_data_final"]:
+        st.session_state[key] = []   
+    st.session_state["filter_data_inicial"] = ""
+    st.session_state["filter_data_final"]  = ""
+with st.sidebar:
+    st.button("🔄 Limpar Filtros", on_click=clear_filters)
+
+    st.header("Filtros Comuns:")
+    # --- Ano ---
+    ano_list  = create_list(df_geral, "ANO")
+    ano_atual  = datetime.now().year
+    st.multiselect(
+        "Ano:",
+        options=ano_list,
+        default=[ano_atual] if ano_atual in ano_list else [],
+        key="filter_ano",
+        placeholder="Selecione os anos"
+    )
+
+    # --- Mês ---
+    meses_map = {1:"JANEIRO",2:"FEVEREIRO",3:"MARÇO",4:"ABRIL",
+                 5:"MAIO",6:"JUNHO",7:"JULHO",8:"AGOSTO",
+                 9:"SETEMBRO",10:"OUTUBRO",11:"NOVEMBRO",12:"DEZEMBRO"}
+    mes_list  = create_list(df_geral, "MES")
+    mes_atual = meses_map[datetime.now().month]
+    st.multiselect(
+        "Mês:",
+        options=mes_list,
+        default=[mes_atual] if mes_atual in mes_list else [],
+        key="filter_mes",
+        placeholder="Selecione os meses"
+    )
+
+    # --- Decêndio ---
+    all_dec = sorted(set(";".join(df_geral["DEC"].dropna()).split(";"))) \
+              if "DEC" in df_geral.columns else []
+    day = datetime.now().day
+    default_dec = ["1"] if day <= 10 else (["2"] if day <= 20 else ["3"])
+    st.multiselect(
+        "Dec:",
+        options=all_dec,
+        default=[d for d in default_dec if d in all_dec],
+        key="filter_dec",
+        placeholder="Selecione os decêndios"
+    )
+    colector_opts = create_list(df_geral, "COLETOR_BP")
+    st.multiselect(
+        "Coletor:",
+        options=colector_opts,
+        default=[],
+        key="filter_coletor",
+        placeholder="Selecione os coletores"
+    )
+
+    # --- BP ---
+    bp_opts = create_list(df_geral, "BP")
+    st.multiselect(
+        "BP:",
+        options=bp_opts,
+        default=[],
+        key="filter_bp",
+        placeholder="Selecione os BPs"
+    )
+
+    # --- Formulário ---
+    form_opts = create_list(df_geral, "FORMULARIO_BP")
+    st.multiselect(
+        "Formulário:",
+        options=form_opts,
+        default=[],
+        key="filter_form",
+        placeholder="Selecione os formulários"
+    )
+
+    # --- Status ---
+    status_opts = create_list(df_status, "STATUS")
+    st.multiselect(
+        "Status:",
+        options=status_opts,
+        default=[],
+        key="filter_status",
+        placeholder="Selecione os status"
+    )
+    st.markdown("#### Filtros da Aba “Visualizar Justificativas”")
+    # Justificativa (Todos / Preenchido / Não Preenchido)
+    st.multiselect(
+        "Justificativa:",
+        options=["Todos", "Preenchido", "Não Preenchido"],
+        default=[],
+        key="filter_just",
+        placeholder="Selecione justificativa"
+    )
+    # Jobs
+    jobs_opts = create_list(df_jobs, "JOBS")
+    st.multiselect(
+        "Jobs:",
+        options=jobs_opts,
+        default=[],
+        key="filter_jobs",
+        placeholder="Selecione os jobs"
+    )
+    st.text_input(
+    "Data de Justificativa Inicial (dd/mm/aaaa):",
+    value=st.session_state.get("filter_data_inicial", ""),
+    key="filter_data_inicial",
+    placeholder="DD/MM/AAAA"
+    )
+    st.text_input(
+        "Data de Justificativa Final (dd/mm/aaaa):",
+        value=st.session_state.get("filter_data_final", ""),
+        key="filter_data_final",
+        placeholder="DD/MM/AAAA"
+    )
+
+
+tabs = st.tabs(["Justificativas", "Adicionar Justificativa"])
+
+with tabs[0]:
+    render_justificativas_tab(df_geral, df_status, df_jobs)
+
+with tabs[1]:
+    render_adicionar_justificativa_tab(df_geral, df_status)
+
