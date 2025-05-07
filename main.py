@@ -108,9 +108,7 @@ def df_to_list(df, coluna, label, placeholder, key=""):
 def render_justificativas_tab(df_geral, df_status, df_jobs):
     st.markdown("### Visualizar Justificativas com Filtros")
     
-    col1, col2, col3 = st.columns(3)
 
-    
     filter_ano = st.session_state.get("filter_ano", [])
     filter_mes = st.session_state.get("filter_mes", [])
     filter_dec = st.session_state.get("filter_dec", [])
@@ -213,7 +211,24 @@ def render_justificativas_tab(df_geral, df_status, df_jobs):
         trabalhados = total - nao_trabalhados
 
         st.write(f"Total: **{total}**  |  Trabalhados: **{trabalhados}**  |  Não trabalhados: **{nao_trabalhados}**")
-        # Reordenando as colunas
+        # --- Listagem de BPs por status ---
+        bps_nao = df_form[df_form["STATUS_PESQ"] == "AINDA NÃO TRABALHADO"]["BP"].dropna().unique().tolist()
+        counts_trab = (
+            df_form[df_form["STATUS_PESQ"] != "AINDA NÃO TRABALHADO"]["BP"]
+            .dropna()
+            .value_counts()
+        )
+
+        if not counts_trab.empty:
+            with st.expander("BPs Trabalhados"):
+                st.write(f"✅ Total de registros trabalhados: {counts_trab.sum()}")
+                # cria lista no formato ["BP1(3)", "BP2(5)", ...]
+                trabalhados_list = [f"{bp}({qtd})" for bp, qtd in counts_trab.items()]
+                st.write(", ".join(trabalhados_list))
+        if bps_nao:
+            with st.expander("BPs Não Trabalhados"):
+                st.write(f"⏸️ BPs Não Trabalhados ({len(bps_nao)}): " + ", ".join(bps_nao))
+                
         colunas = [
             "ANO", "MES", "DEC", "BP", "DATA_JUST", "COLETOR_BP", "FORMULARIO_BP",
             "JOBS", "COLETOR_PESQ", "FORMULARIO_PESQ", "STATUS_PESQ", "JUSTIFICATIVA"
@@ -316,11 +331,29 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
     trabalhados = total - nao_trabalhados
 
     st.write(f"Total: **{total}**  |  Trabalhados: **{trabalhados}**  |  Não trabalhados: **{nao_trabalhados}**")
+    bps_nao = df_form[df_form["STATUS_PESQ"] == "AINDA NÃO TRABALHADO"]["BP"].dropna().unique().tolist()
+    counts_trab = (
+            df_form[df_form["STATUS_PESQ"] != "AINDA NÃO TRABALHADO"]["BP"]
+            .dropna()
+            .value_counts()
+        )
+
+    if not counts_trab.empty:
+            with st.expander("BPs Trabalhados"):
+                st.write(f"✅ Total de registros trabalhados: {counts_trab.sum()}")
+                trabalhados_list = [f"{bp}({qtd})" for bp, qtd in counts_trab.items()]
+                st.write(", ".join(trabalhados_list))
+    if bps_nao:
+        with st.expander("BPs Não Trabalhados"):
+            st.write(
+                f"⏸️ BPs Não Trabalhados ({len(bps_nao)}): "
+                + ", ".join(map(str, bps_nao))
+            )
+
     
     page_size = 50
     st.markdown("#### Relação de BPs:")
     total_pages = max(1, math.ceil(len(df_latest) / page_size))
-    
     if "current_page_setas" not in st.session_state:
         st.session_state.current_page_setas = 1
     
@@ -545,16 +578,21 @@ with st.sidebar:
         key="filter_data_final",
         placeholder="DD/MM/AAAA"
     )
-    if st.button("🔄 Limpar Filtros"):
-        for key in [
+    FILTER_KEYS = [
+            "filter_mes", "filter_dec",
             "filter_coletor","filter_bp","filter_form",
             "filter_status","filter_just","filter_jobs",
             "selected_colectors","selected_bps","selected_forms",
-            "selected_status_pesq","selected_tipo_coleta"
-        ]:
-            if key in st.session_state:
-                st.session_state[key] = []
+            "selected_status_pesq","selected_tipo_coleta"]
+    def clear_filters():
+        for key in FILTER_KEYS:
+            # garanta que exista, e coloque o valor padrão
+            st.session_state[key] = []
+        
         st.rerun()
+            
+    st.button("🔄 Limpar Filtros",on_click=clear_filters)
+        
 
 tabs = st.tabs(["Justificativas", "Adicionar Justificativa"])
 
