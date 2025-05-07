@@ -69,13 +69,14 @@
 
 ## 📊 5. Aba “Justificativas”
 
-![Aba Justificativas](assets/tutorial4.gif)
+![Aba Justificativas](assets/tutorial3.gif)
 
 1. **Aplicação dos filtros:** todos os controles são lidos da sidebar.  
 2. **Indicadores:**  
    ```text
-   Total: 1234  |  Trabalhados: 1000  |  Não trabalhados: 234
+   Total |  Trabalhados  |  Não trabalhados | BPs Trabalhados | Bps Não Trabalhados
    ```  
+
 3. **Grid de Resultados:**  
    - **Colunas:**  
      ```text
