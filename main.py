@@ -271,9 +271,13 @@ def render_justificativas_tab(df_geral, df_status, df_jobs):
         else:
             df_form["BP"] = ""
 
-        
-        
-        st.write("Total:", df_form.shape[0])
+       
+        total = df_form.shape[0]
+        nao_trabalhados = df_form[df_form["STATUS_PESQ"] == "AINDA NÃO TRABALHADO"].shape[0]
+        trabalhados = total - nao_trabalhados
+
+        st.write(f"Total: {total}  |  Trabalhados: {trabalhados}  |  Não trabalhados: {nao_trabalhados}")
+
         # Reordenando as colunas
         colunas = [
             "ANO", "MES", "DEC", "BP", "DATA_JUST", "COLETOR_BP", "FORMULARIO_BP",
@@ -302,6 +306,7 @@ def render_justificativas_tab(df_geral, df_status, df_jobs):
         )
     else:
         st.error("Nenhum dado encontrado.")
+
 
 def render_adicionar_justificativa_tab(df_geral, df_status):
     st.markdown("### Formulário de Justificativa")
@@ -417,13 +422,7 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
         help="Filtre pelo status de pesquisa.",
         key="selected_status_pesq"
     )
-    selected_tipo_coleta = col2_under.multiselect(
-        "Tipo de Coleta:",
-        options=colector_list,
-        default=[],
-        help="Filtre pelo tipo de coletor pesquisador.",
-        key="selected_tipo_coleta"
-    )
+
     
     # Agrega todos os filtros (inclusive os de Ano, Mês e Dec) para filtrar o DataFrame de formulários
     selected_filters = [
@@ -434,7 +433,6 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
         ("BP", selected_bps),
         ("FORMULARIO_BP", selected_forms),
         ("STATUS_PESQ", selected_status_pesq),
-        ("COLETOR_PESQ",selected_tipo_coleta )
     ]
     
     # Se nenhum filtro for selecionado, emite aviso
@@ -443,6 +441,18 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
         return
 
     df_form = df_geral.copy()
+    def _save_and_flag(idx: int, sql_to_run: str):
+        session.sql(sql_to_run).collect()
+        st.cache_data.clear()
+        for widget_key in [
+            f"form_pesq-{idx}",
+            f"form_status-{idx}",
+            f"form_coletor-{idx}",
+            f"form_just-{idx}"
+        ]:
+            st.session_state[widget_key] = "" 
+        st.session_state[f"saved_{idx}"] = True
+
     for coluna, selected in selected_filters:
         if not selected:
             continue
@@ -464,8 +474,12 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
         st.info("Não há formulários para preencher.")
         return
 
-    st.write("Total:", df_latest.shape[0])
-    
+    total = df_form.shape[0]
+    nao_trabalhados = df_form[df_form["STATUS_PESQ"] == "AINDA NÃO TRABALHADO"].shape[0]
+    trabalhados = total - nao_trabalhados
+
+    st.write(f"Total: {total}  |  Trabalhados: {trabalhados}  |  Não trabalhados: {nao_trabalhados}")
+
     page_size = 50
     st.markdown("#### Relação de BPs:")
     total_pages = max(1, math.ceil(len(df_latest) / page_size))
@@ -507,7 +521,7 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
             row['JUSTIFICATIVA'] if pd.notna(row['JUSTIFICATIVA']) else "Sem justificativa"
         )
         
-        with st.form(key=f"form_{index}", clear_on_submit=True):
+        with st.container(border=True):
             st.markdown(
                 f"**BP:** {row['BP']} | **Coletor:** {row['COLETOR_BP']} | "
                 f"**Formulário:** {row['FORMULARIO_BP']} | **Mês:** {row['MES']} | "
@@ -530,31 +544,24 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
             form_just_val = st.text_area(
                 "Justificativa:", max_chars=500, key=f"form_just-{index}"
             )
+            just_clean = form_just_val.replace("'", "''")
+            fuso  = pytz.timezone("America/Sao_Paulo")
+            agora = datetime.now().astimezone(fuso).strftime("%Y-%m-%d %H:%M:%S")
             
-            salvar = st.form_submit_button("Salvar justificativa")
-            if salvar:
-                # 1) validação mínima
-                if not (form_pesq_val and form_status_val and form_coletor_val):
-                    st.warning("Preencha Formulário Pesq., Status e Coletor antes de salvar.")
-                else:
-                    # 2) monta o SQL
-                    fuso = pytz.timezone("America/Sao_Paulo")
-                    agora = datetime.now().astimezone(fuso).strftime("%Y-%m-%d %H:%M:%S")
-
-                    if pd.isna(row["DATA_JUST"]):
+            if pd.isna(row["DATA_JUST"]):
                         sql = f"""
                         UPDATE BASES_SPDO.DB_APP_JUST_BP.TB_JUST_GERAL
                            SET DATA_JUST = '{agora}',
                                COLETOR_PESQ = '{form_coletor_val}',
                                FORMULARIO_PESQ = '{form_pesq_val}',
                                STATUS_PESQ = '{form_status_val}',
-                               JUSTIFICATIVA = '{form_just_val}',
+                               JUSTIFICATIVA = '{just_clean}',
                                ID_JUST = 1
                          WHERE BP = '{row['BP']}'
                            AND MES = '{row['MES']}'
                            AND DATA_JUST IS NULL
                         """
-                    else:
+            else:
                         new_id = 1 + (int(row.get("ID_JUST")) if pd.notna(row.get("ID_JUST")) else 0)
                         sql = f"""
                         INSERT INTO BASES_SPDO.DB_APP_JUST_BP.TB_JUST_GERAL
@@ -564,20 +571,30 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
                         ('{row["ANO"]}', '{row["MES"]}', '{agora}', '{row["DEC"]}',
                          '{row["BP"]}', '{row["COLETOR_BP"]}', '{row["FORMULARIO_BP"]}',
                          '{row["JOBS"]}', '{form_coletor_val}', '{form_pesq_val}',
-                         '{form_status_val}', '{form_just_val}', '{new_id}')
+                         '{form_status_val}', '{just_clean}', '{new_id}')
                         """
 
-                    # 3) executa e limpa cache
-                    try:
-                        session.sql(sql).collect()
-                        st.cache_data.clear()
-                        st.success(f"Justificativa de {row['BP']} salva com sucesso!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao salvar: {e}")
-                
+            
+            st.button(
+                "Salvar justificativa",
+                key=f"submit_{index}",
+                on_click=_save_and_flag,
+                args=(index, sql)
+            )
+            if st.session_state.get(f"saved_{index}", False):
+                st.success("Justificativa salva com sucesso!")
+                st.session_state.pop(f"saved_{index}")
 
+            st.session_state[f"saved_{index}"] = False
+            if any([
+                st.session_state[f"form_pesq-{index}"],
+                st.session_state[f"form_status-{index}"],
+                st.session_state[f"form_coletor-{index}"],
+                st.session_state[f"form_just-{index}"]
+            ]) and not st.session_state.get(f"submit-{index}", False):
+                st.warning("Você preencheu campos, mas ainda não salvou a justificativa!")
 
+                    
 
 # ================================
 # Execução Principal
@@ -593,8 +610,10 @@ with st.sidebar:
             for key in [
                 "filter_coletor","filter_bp","filter_form",
                 "filter_status","filter_just","filter_jobs",
+                "filter_mes", "filter_dec",
                 "selected_colectors","selected_bps","selected_forms",
-                "selected_status_pesq","selected_tipo_coleta"
+                "selected_status_pesq",
+                "selected_mes", "selected_decs"
             ]:
                 if key in st.session_state:
                     st.session_state[key] = []
