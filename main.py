@@ -474,6 +474,8 @@ df_geral  = load_just_geral()
 df_status = load_just_status() 
 df_jobs   = load_just_jobs()  
 with st.sidebar:
+    st.markdown("#### Filtros Gerais:")
+    
     ano_list  = create_list(df_geral, "ANO")
     ano_atual  = datetime.now().year
     st.multiselect(
@@ -548,7 +550,7 @@ with st.sidebar:
         key="filter_status",
         placeholder="Selecione os status"
     )
-    st.markdown("#### Filtros da Aba “Visualizar Justificativas”")
+    st.markdown("#### Filtros da Aba “Visualizar Justificativas”:")
     # Justificativa (Todos / Preenchido / Não Preenchido)
     st.multiselect(
         "Justificativa:",
@@ -588,6 +590,7 @@ with st.sidebar:
         for key in FILTER_KEYS:
             # garanta que exista, e coloque o valor padrão
             st.session_state[key] = []
+        
             
     st.button("🔄 Limpar Filtros",on_click=clear_filters)
         
