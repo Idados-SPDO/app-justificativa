@@ -588,8 +588,6 @@ with st.sidebar:
         for key in FILTER_KEYS:
             # garanta que exista, e coloque o valor padrão
             st.session_state[key] = []
-        
-        st.rerun()
             
     st.button("🔄 Limpar Filtros",on_click=clear_filters)
         
