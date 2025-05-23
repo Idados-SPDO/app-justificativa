@@ -9,8 +9,8 @@ import math
 from snowflake.snowpark import Session
 
 st.set_page_config(
-    page_title="App Justificativa",   
-    page_icon="📄",                    
+    page_title="SPDO App Justificativa",   
+    page_icon="fgv_logo.png",                    
     layout="wide"                      
 )
 
@@ -206,28 +206,40 @@ def render_justificativas_tab(df_geral, df_status, df_jobs):
 
         
         
-        total = df_form.shape[0]
-        nao_trabalhados = df_form[df_form["STATUS_PESQ"] == "AINDA NÃO TRABALHADO"].shape[0]
-        trabalhados = total - nao_trabalhados
+        all_bps = df_form["BP"].dropna().unique().tolist()
 
-        st.write(f"Total: **{total}**  |  Trabalhados: **{trabalhados}**  |  Não trabalhados: **{nao_trabalhados}**")
-        # --- Listagem de BPs por status ---
-        bps_nao = df_form[df_form["STATUS_PESQ"] == "AINDA NÃO TRABALHADO"]["BP"].dropna().unique().tolist()
-        counts_trab = (
-            df_form[df_form["STATUS_PESQ"] != "AINDA NÃO TRABALHADO"]["BP"]
-            .dropna()
-            .value_counts()
+        # 2) Quais BPs têm ao menos um registro 'trabalhado'
+        worked_bps = (
+            df_form[df_form["STATUS_PESQ"] != "AINDA NÃO TRABALHADO"]
+            ["BP"].dropna().unique().tolist()
         )
 
-        if not counts_trab.empty:
-            with st.expander("BPs Trabalhados"):
-                st.write(f"✅ Total de registros trabalhados: {counts_trab.sum()}")
-                # cria lista no formato ["BP1(3)", "BP2(5)", ...]
-                trabalhados_list = [f"{bp}({qtd})" for bp, qtd in counts_trab.items()]
-                st.write(", ".join(trabalhados_list))
-        if bps_nao:
-            with st.expander("BPs Não Trabalhados"):
-                st.write(f"⏸️ BPs Não Trabalhados ({len(bps_nao)}): " + ", ".join(bps_nao))
+        # 3) Os que sobraram são não trabalhados
+        not_worked_bps = [bp for bp in all_bps if bp not in worked_bps]
+
+        # 4) Contagens
+        total_bps = len(all_bps)
+        num_worked = len(worked_bps)
+        num_not_worked = len(not_worked_bps)
+
+        st.write(f"Total de BPs: **{total_bps}**  |  BPs Trabalhados: **{num_worked}**  |  BPs Não Trabalhados: **{num_not_worked}**")
+# --- Listagem de BPs por status ---
+        #bps_nao = df_form[df_form["STATUS_PESQ"] == "AINDA NÃO TRABALHADO"]["BP"].dropna().unique().tolist()
+        #counts_trab = (
+        #    df_form[df_form["STATUS_PESQ"] != "AINDA NÃO TRABALHADO"]["BP"]
+        #    .dropna()
+        #    .value_counts()
+        #)
+
+        #if not counts_trab.empty:
+        #    with st.expander("BPs Trabalhados"):
+        #        st.write(f"✅ Total de registros trabalhados: {counts_trab.sum()}")
+        #        # cria lista no formato ["BP1(3)", "BP2(5)", ...]
+        #        trabalhados_list = [f"{bp}({qtd})" for bp, qtd in counts_trab.items()]
+        #        st.write(", ".join(trabalhados_list))
+        #if bps_nao:
+        #    with st.expander("BPs Não Trabalhados"):
+        #        st.write(f"⏸️ BPs Não Trabalhados ({len(bps_nao)}): " + ", ".join(bps_nao))
                 
         colunas = [
             "ANO", "MES", "DEC", "BP", "DATA_JUST", "COLETOR_BP", "FORMULARIO_BP",
@@ -241,8 +253,19 @@ def render_justificativas_tab(df_geral, df_status, df_jobs):
         df_form = df_form[colunas]
 
 
-        df_sorted = df_form.sort_values(by=["DATA_JUST", "BP"], ascending=[False, True])
-        st.dataframe(df_sorted)
+        df_sorted = (
+            df_form
+            .sort_values(by=["DATA_JUST", "BP"], ascending=[False, True])
+            .reset_index(drop=True)
+        )
+
+        # 2) Exibe via data_editor, escondendo o índice nativo:
+        st.data_editor(
+            df_sorted,
+            hide_index=True,
+            disabled=True,
+            use_container_width=True
+        )
 
         output = BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -326,29 +349,42 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
         st.info("Não há formulários para preencher.")
         return
 
-    total = df_form.shape[0]
-    nao_trabalhados = df_form[df_form["STATUS_PESQ"] == "AINDA NÃO TRABALHADO"].shape[0]
-    trabalhados = total - nao_trabalhados
+    all_bps = df_form["BP"].dropna().unique().tolist()
 
-    st.write(f"Total: **{total}**  |  Trabalhados: **{trabalhados}**  |  Não trabalhados: **{nao_trabalhados}**")
-    bps_nao = df_form[df_form["STATUS_PESQ"] == "AINDA NÃO TRABALHADO"]["BP"].dropna().unique().tolist()
-    counts_trab = (
-            df_form[df_form["STATUS_PESQ"] != "AINDA NÃO TRABALHADO"]["BP"]
-            .dropna()
-            .value_counts()
-        )
+    # 2) Quais BPs têm ao menos um registro 'trabalhado'
+    worked_bps = (
+        df_form[df_form["STATUS_PESQ"] != "AINDA NÃO TRABALHADO"]
+        ["BP"].dropna().unique().tolist()
+    )
 
-    if not counts_trab.empty:
-            with st.expander("BPs Trabalhados"):
-                st.write(f"✅ Total de registros trabalhados: {counts_trab.sum()}")
-                trabalhados_list = [f"{bp}({qtd})" for bp, qtd in counts_trab.items()]
-                st.write(", ".join(trabalhados_list))
-    if bps_nao:
-        with st.expander("BPs Não Trabalhados"):
-            st.write(
-                f"⏸️ BPs Não Trabalhados ({len(bps_nao)}): "
-                + ", ".join(map(str, bps_nao))
-            )
+    # 3) Os que sobraram são não trabalhados
+    not_worked_bps = [bp for bp in all_bps if bp not in worked_bps]
+
+    # 4) Contagens
+    total_bps = len(all_bps)
+    num_worked = len(worked_bps)
+    num_not_worked = len(not_worked_bps)
+
+    st.write(f"Total de BPs: **{total_bps}**  |  BPs Trabalhados: **{num_worked}**  |  BPs Não Trabalhados: **{num_not_worked}**")
+
+    #bps_nao = df_form[df_form["STATUS_PESQ"] == "AINDA NÃO TRABALHADO"]["BP"].dropna().unique().tolist()
+    #counts_trab = (
+    #        df_form[df_form["STATUS_PESQ"] != "AINDA NÃO TRABALHADO"]["BP"]
+    #        .dropna()
+    #        .value_counts()
+    #    )
+
+    #if not counts_trab.empty:
+    #        with st.expander("BPs Trabalhados"):
+    #            st.write(f"✅ Total de registros trabalhados: {counts_trab.sum()}")
+    #            trabalhados_list = [f"{bp}({qtd})" for bp, qtd in counts_trab.items()]
+    #            st.write(", ".join(trabalhados_list))
+    #if bps_nao:
+    #    with st.expander("BPs Não Trabalhados"):
+    #        st.write(
+    #            f"⏸️ BPs Não Trabalhados ({len(bps_nao)}): "
+    #            + ", ".join(map(str, bps_nao))
+    #        )
 
     
     page_size = 50
@@ -455,17 +491,25 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
                     try:
                         session.sql(sql).collect()
                         st.cache_data.clear()
-                        st.success(f"Justificativa de {row['BP']} salva com sucesso!")
-                        st.rerun()
+                        verify_sql = f"""
+                        SELECT 1 
+                            FROM BASES_SPDO.DB_APP_JUST_BP.TB_JUST_GERAL 
+                            WHERE BP = '{row['BP']}' 
+                            AND MES = '{row['MES']}' 
+                            AND FORMULARIO_PESQ = '{form_pesq_val}'
+                            AND STATUS_PESQ = '{form_status_val}'
+                            AND COLETOR_PESQ = '{form_coletor_val}'
+                            AND JUSTIFICATIVA = '{form_just_val}'
+                        """
+                        verif = session.sql(verify_sql).collect()
+                        if verif:
+                            st.success(f"Justificativa de {row['BP']} salva com sucesso!")
+                            st.rerun()
+                        else:
+                            st.error("Ops… não encontrei o registro salvo. Verifique seus filtros ou tente novamente.")
                     except Exception as e:
                         st.error(f"Erro ao salvar: {e}")
                 
-
-
-
-# ================================
-# Execução Principal
-# ================================
 session.sql("USE WAREHOUSE SPDO").collect()
 
 st.logo('assets/logo_ibre.png')
@@ -512,7 +556,7 @@ with st.sidebar:
         key="filter_dec",
         placeholder="Selecione os decêndios"
     )
-    colector_opts = create_list(df_geral, "COLETOR_BP")
+    colector_opts = sorted(create_list(df_geral, "COLETOR_BP"))
     st.multiselect(
         "Coletor:",
         options=colector_opts,
@@ -522,7 +566,7 @@ with st.sidebar:
     )
 
     # --- BP ---
-    bp_opts = create_list(df_geral, "BP")
+    bp_opts = sorted(create_list(df_geral, "BP"))
     st.multiselect(
         "BP:",
         options=bp_opts,
@@ -532,7 +576,7 @@ with st.sidebar:
     )
 
     # --- Formulário ---
-    form_opts = create_list(df_geral, "FORMULARIO_BP")
+    form_opts = sorted(create_list(df_geral, "FORMULARIO_BP"))
     st.multiselect(
         "Formulário:",
         options=form_opts,
@@ -542,7 +586,7 @@ with st.sidebar:
     )
 
     # --- Status ---
-    status_opts = create_list(df_status, "STATUS")
+    status_opts = sorted(create_list(df_status, "STATUS"))
     st.multiselect(
         "Status:",
         options=status_opts,
@@ -581,7 +625,6 @@ with st.sidebar:
         placeholder="DD/MM/AAAA"
     )
     FILTER_KEYS = [
-            "filter_mes", "filter_dec",
             "filter_coletor","filter_bp","filter_form",
             "filter_status","filter_just","filter_jobs",
             "selected_colectors","selected_bps","selected_forms",
@@ -595,7 +638,7 @@ with st.sidebar:
     st.button("🔄 Limpar Filtros",on_click=clear_filters)
         
 
-tabs = st.tabs(["Justificativas", "Adicionar Justificativa"])
+tabs = st.tabs(["Visualizar Justificativas", "Adicionar Justificativa"])
 
 with tabs[0]:
      
