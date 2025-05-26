@@ -604,7 +604,7 @@ with st.sidebar:
         placeholder="Selecione justificativa"
     )
     # Jobs
-    jobs_opts = create_list(df_jobs, "JOBS")
+    jobs_opts = sorted(create_list(df_jobs, "JOBS"))
     st.multiselect(
         "Jobs:",
         options=jobs_opts,
