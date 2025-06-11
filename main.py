@@ -118,6 +118,9 @@ def render_justificativas_tab(df_geral, df_status, df_jobs):
     filter_status   = st.session_state.get("filter_status", [])
     filter_just = st.session_state.get("filter_just", [])
     filter_jobs = st.session_state.get("filter_jobs", [])
+    select_last = st.session_state.get("select_last", False)
+    filter_pending = st.session_state.get("filter_pending", [])
+
     
     # Cria um DataFrame filtrado para as demais listas
     df_filtered = df_geral.copy()
@@ -132,11 +135,30 @@ def render_justificativas_tab(df_geral, df_status, df_jobs):
     
     # Conversão para datetime e formatação com hora (DD/MM/YYYY HH:MM:SS)
     df_geral["DATA_JUST"] = pd.to_datetime(df_geral["DATA_JUST"], dayfirst=True)
-    
+
+    df_last = (
+        df_geral
+        .sort_values("DATA_JUST")
+        .drop_duplicates(subset=["BP"], keep="last")
+    )
+
+    concluido_statuses = [
+                "EMPRESA ENCERROU AS ATIVIDADE",
+                "EMPRESA FECHADA TEMPORARIAMENTE",
+                "NÃO DESEJA PARTICIPAR DA COLETA NESTE DEC",
+                "PREÇO/FALTA DIGITADO",
+                "RECUSA DEFINITIVA"
+            ]
+    concluido_bps = df_last.loc[
+        df_last["STATUS_PESQ"].isin(concluido_statuses),
+        "BP"
+    ].unique().tolist()
     data_inicial_str = st.session_state.get("filter_data_inicial", "")
     data_final_str   = st.session_state.get("filter_data_final", "")
 
     if df_geral is not None and not df_geral.empty:
+        df_geral = df_geral[~df_geral["BP"].isin(concluido_bps)]
+
         df_form = df_geral.copy()
         if filter_bp:
             df_form = df_form[df_form["BP"].isin(filter_bp)]
@@ -173,6 +195,7 @@ def render_justificativas_tab(df_geral, df_status, df_jobs):
                     )
 
                 df_form = df_form[mask_just]
+
         date_pattern = re.compile(r"^\d{2}/\d{2}/\d{4}$")
         try:
             if data_inicial_str:
@@ -188,6 +211,18 @@ def render_justificativas_tab(df_geral, df_status, df_jobs):
                 df_form = df_form[df_form["DATA_JUST"] < end_dt]
         except ValueError:
             st.error("Formato de data inválido. Use apenas números e '/' no formato dd/mm/aaaa.")
+        if select_last:
+            df_form["DATA_JUST"] = pd.to_datetime(df_form["DATA_JUST"], dayfirst=True)
+            df_form = (
+                df_form
+                .sort_values("DATA_JUST")
+                .drop_duplicates(subset=["BP"], keep="last")
+            )
+        if filter_pending:
+            if "Concluído" in filter_pending and "Pendente" not in filter_pending:
+                df_form = df_form[df_form["STATUS_PESQ"].isin(concluido_statuses)]
+            elif "Pendente" in filter_pending and "Concluído" not in filter_pending:
+                df_form = df_form[~df_form["STATUS_PESQ"].isin(concluido_statuses)]
 
         # Aqui a formatação inclui data e horário
         if "DATA_JUST" in df_form.columns and not df_form.empty:
@@ -223,24 +258,7 @@ def render_justificativas_tab(df_geral, df_status, df_jobs):
         num_not_worked = len(not_worked_bps)
 
         st.write(f"Total de BPs: **{total_bps}**  |  BPs Trabalhados: **{num_worked}**  |  BPs Não Trabalhados: **{num_not_worked}**")
-# --- Listagem de BPs por status ---
-        #bps_nao = df_form[df_form["STATUS_PESQ"] == "AINDA NÃO TRABALHADO"]["BP"].dropna().unique().tolist()
-        #counts_trab = (
-        #    df_form[df_form["STATUS_PESQ"] != "AINDA NÃO TRABALHADO"]["BP"]
-        #    .dropna()
-        #    .value_counts()
-        #)
-
-        #if not counts_trab.empty:
-        #    with st.expander("BPs Trabalhados"):
-        #        st.write(f"✅ Total de registros trabalhados: {counts_trab.sum()}")
-        #        # cria lista no formato ["BP1(3)", "BP2(5)", ...]
-        #        trabalhados_list = [f"{bp}({qtd})" for bp, qtd in counts_trab.items()]
-        #        st.write(", ".join(trabalhados_list))
-        #if bps_nao:
-        #    with st.expander("BPs Não Trabalhados"):
-        #        st.write(f"⏸️ BPs Não Trabalhados ({len(bps_nao)}): " + ", ".join(bps_nao))
-                
+     
         colunas = [
             "ANO", "MES", "DEC", "BP", "DATA_JUST", "COLETOR_BP", "FORMULARIO_BP",
             "JOBS", "COLETOR_PESQ", "FORMULARIO_PESQ", "STATUS_PESQ", "JUSTIFICATIVA"
@@ -291,6 +309,7 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
     selected_bps     = st.session_state.get("filter_bp", [])
     selected_forms   = st.session_state.get("filter_form", [])
     selected_status_pesq = st.session_state.get("filter_status", [])
+    selected_pending = st.session_state.get("filter_pending", [])
     # Filtrar o df_geral com base nos filtros de Ano, Mês e Dec
     df_filtered = df_geral.copy()
     if selected_anos:
@@ -305,7 +324,6 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
     # Gere as listas dinâmicas para Coletores e BP a partir do DataFrame filtrado
     colector_list = create_list(df_filtered, "COLETOR_BP")
     colector_list = [item for item in colector_list if item != 'None']
-    bp_list = create_list(df_filtered, "BP")
     
     # Outras listas que não dependem dos filtros continuam vindo do df original
     option_list = create_list(df_geral, "FORMULARIO_BP")
@@ -337,14 +355,37 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
             )]
         else:
             df_form = df_form[df_form[coluna].isin(selected)]
-    
+
+    selected_pending = st.session_state.get("filter_pending", [])
+    if selected_pending:
+        concluido_statuses = [
+            "EMPRESA ENCERROU AS ATIVIDADE",
+                "EMPRESA FECHADA TEMPORARIAMENTE",
+                "NÃO DESEJA PARTICIPAR DA COLETA NESTE DEC",
+                "PREÇO/FALTA DIGITADO",
+                "RECUSA DEFINITIVA"
+        ]
+        if "Concluído" in selected_pending and "Pendente" not in selected_pending:
+            df_form = df_form[df_form["STATUS_PESQ"].isin(concluido_statuses)]
+        elif "Pendente" in selected_pending and "Concluído" not in selected_pending:
+            df_form = df_form[~df_form["STATUS_PESQ"].isin(concluido_statuses)]
     df_form["DATA_JUST"] = pd.to_datetime(df_form["DATA_JUST"], errors="coerce")
     df_form = df_form.sort_values("DATA_JUST", na_position="first")
     
     with st.spinner("Processando dados..."):
         df_latest = df_form.groupby(["BP", "MES"], as_index=False).last()
-        df_latest = df_latest[df_latest["STATUS_PESQ"] != "CONCLUÍDA"]
-    
+
+        # lista de status que marcam “concluído”
+        concluido_statuses = [
+            "EMPRESA ENCERROU AS ATIVIDADE",
+                "EMPRESA FECHADA TEMPORARIAMENTE",
+                "NÃO DESEJA PARTICIPAR DA COLETA NESTE DEC",
+                "PREÇO/FALTA DIGITADO",
+                "RECUSA DEFINITIVA"
+        ]
+        # remove os que já estão concluídos
+        df_latest = df_latest[~df_latest["STATUS_PESQ"].isin(concluido_statuses)]
+        
     if df_latest.empty:
         st.info("Não há formulários para preencher.")
         return
@@ -367,26 +408,6 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
 
     st.write(f"Total de BPs: **{total_bps}**  |  BPs Trabalhados: **{num_worked}**  |  BPs Não Trabalhados: **{num_not_worked}**")
 
-    #bps_nao = df_form[df_form["STATUS_PESQ"] == "AINDA NÃO TRABALHADO"]["BP"].dropna().unique().tolist()
-    #counts_trab = (
-    #        df_form[df_form["STATUS_PESQ"] != "AINDA NÃO TRABALHADO"]["BP"]
-    #        .dropna()
-    #        .value_counts()
-    #    )
-
-    #if not counts_trab.empty:
-    #        with st.expander("BPs Trabalhados"):
-    #            st.write(f"✅ Total de registros trabalhados: {counts_trab.sum()}")
-    #            trabalhados_list = [f"{bp}({qtd})" for bp, qtd in counts_trab.items()]
-    #            st.write(", ".join(trabalhados_list))
-    #if bps_nao:
-    #    with st.expander("BPs Não Trabalhados"):
-    #        st.write(
-    #            f"⏸️ BPs Não Trabalhados ({len(bps_nao)}): "
-    #            + ", ".join(map(str, bps_nao))
-    #        )
-
-    
     page_size = 50
     st.markdown("#### Relação de BPs:")
     total_pages = max(1, math.ceil(len(df_latest) / page_size))
@@ -412,6 +433,7 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
     start_index = (current_page - 1) * page_size
     end_index = start_index + page_size
     df_page = df_latest.iloc[start_index:end_index]
+    
 
     df_geral["DATA_JUST"] = df_geral["DATA_JUST"].dt.tz_localize('UTC').dt.tz_convert('America/Sao_Paulo')
     df_form["DATA_JUST"] = df_form["DATA_JUST"].dt.strftime('%d/%m/%Y %H:%M:%S')
@@ -512,14 +534,19 @@ def render_adicionar_justificativa_tab(df_geral, df_status):
                 
 session.sql("USE WAREHOUSE SPDO").collect()
 
-st.logo('assets/logo_ibre.png')
+st.logo('https://ciclo-economico-ibre.fgv.br/logo_ibre.png')
 
 df_geral  = load_just_geral() 
 df_status = load_just_status() 
 df_jobs   = load_just_jobs()  
 with st.sidebar:
     st.markdown("#### Filtros Gerais:")
-    
+    st.toggle(
+        "Última atualização p/ cada BP",
+        key="select_last",
+        value=True,
+        help="Ao selecionar essa opção, pode-se ver a ultima atualização de cada BP. Ao tirar essa opção, é possivel ver o histórico dos BPs ao longo do DEC."
+    )
     ano_list  = create_list(df_geral, "ANO")
     ano_atual  = datetime.now().year
     st.multiselect(
@@ -560,17 +587,22 @@ with st.sidebar:
     st.multiselect(
         "Coletor:",
         options=colector_opts,
-        default=[],
         key="filter_coletor",
         placeholder="Selecione os coletores"
     )
-
+    
+    # --- Verificador de Pendência ---
+    st.multiselect(
+        "Situação da Coleta:",
+        options=["Pendente","Concluído"],
+        key="filter_pending",
+        placeholder="Selecione a situação da coleta"
+    )
     # --- BP ---
     bp_opts = sorted(create_list(df_geral, "BP"))
     st.multiselect(
         "BP:",
         options=bp_opts,
-        default=[],
         key="filter_bp",
         placeholder="Selecione os BPs"
     )
@@ -580,7 +612,6 @@ with st.sidebar:
     st.multiselect(
         "Formulário:",
         options=form_opts,
-        default=[],
         key="filter_form",
         placeholder="Selecione os formulários"
     )
@@ -590,16 +621,15 @@ with st.sidebar:
     st.multiselect(
         "Status:",
         options=status_opts,
-        default=[],
         key="filter_status",
         placeholder="Selecione os status"
     )
+
+    
     st.markdown("#### Filtros da Aba “Visualizar Justificativas”:")
-    # Justificativa (Todos / Preenchido / Não Preenchido)
     st.multiselect(
         "Justificativa:",
         options=["Todos", "Preenchido", "Não Preenchido"],
-        default=[],
         key="filter_just",
         placeholder="Selecione justificativa"
     )
@@ -608,7 +638,6 @@ with st.sidebar:
     st.multiselect(
         "Jobs:",
         options=jobs_opts,
-        default=[],
         key="filter_jobs",
         placeholder="Selecione os jobs"
     )
@@ -626,7 +655,7 @@ with st.sidebar:
     )
     FILTER_KEYS = [
             "filter_coletor","filter_bp","filter_form",
-            "filter_status","filter_just","filter_jobs",
+            "filter_status","filter_just","filter_jobs","filter_pending",
             "selected_colectors","selected_bps","selected_forms",
             "selected_status_pesq","selected_tipo_coleta"]
     def clear_filters():
