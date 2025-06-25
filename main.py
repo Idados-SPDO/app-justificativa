@@ -540,6 +540,19 @@ df_geral  = load_just_geral()
 df_status = load_just_status() 
 df_jobs   = load_just_jobs()  
 with st.sidebar:
+    FILTER_KEYS = [
+            "filter_coletor","filter_bp","filter_form",
+            "filter_status","filter_just","filter_jobs","filter_pending",
+            "selected_colectors","selected_bps","selected_forms",
+            "selected_status_pesq","selected_tipo_coleta"]
+    def clear_filters():
+        for key in FILTER_KEYS:
+            # garanta que exista, e coloque o valor padrão
+            st.session_state[key] = []
+        
+            
+    st.button("🔄 Limpar Filtros",on_click=clear_filters)
+    
     st.markdown("#### Filtros Gerais:")
     st.toggle(
         "Última atualização p/ cada BP",
@@ -653,18 +666,6 @@ with st.sidebar:
         key="filter_data_final",
         placeholder="DD/MM/AAAA"
     )
-    FILTER_KEYS = [
-            "filter_coletor","filter_bp","filter_form",
-            "filter_status","filter_just","filter_jobs","filter_pending",
-            "selected_colectors","selected_bps","selected_forms",
-            "selected_status_pesq","selected_tipo_coleta"]
-    def clear_filters():
-        for key in FILTER_KEYS:
-            # garanta que exista, e coloque o valor padrão
-            st.session_state[key] = []
-        
-            
-    st.button("🔄 Limpar Filtros",on_click=clear_filters)
         
 
 tabs = st.tabs(["Visualizar Justificativas", "Adicionar Justificativa"])
