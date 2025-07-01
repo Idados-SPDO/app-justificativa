@@ -1,25 +1,18 @@
 import streamlit as st
 import pandas as pd
-from io import StringIO, BytesIO
-import datetime
-import zipfile
-import calendar
+from datetime import datetime
+import pytz
+from io import BytesIO
+import concurrent.futures
+import re
+import math
 from snowflake.snowpark import Session
 
-
-from utils.data_utils import mask_code, prepare_df, split_quartil_decreto
-from utils.excel_utils import make_excel_with_headers
-from utils.doc_utils import generate_full_doc, generate_price_only_doc
-
-# ─────────── Configurações iniciais de Streamlit ───────────
 st.set_page_config(
-    page_title="SPDO - Automatizador de Relatórios PCRJ",
-    page_icon="fgv_logo.png",
-    initial_sidebar_state="expanded",
-    layout="wide"
+    page_title="SPDO App Justificativa",   
+    page_icon="fgv_logo.png",                    
+    layout="wide"                      
 )
-st.title("Automatizador de Relatórios PCRJ")
-st.logo("logo_ibre.png")
 
 @st.cache_resource
 def get_session():
@@ -27,284 +20,660 @@ def get_session():
 
 session = get_session()
 
-def load_sazonalidade():
-    sql = "SELECT * FROM BASES_SPDO.DB_APP_RELATORIO_PCRJ.TB_SAZONALIDADE"
+st.markdown("<h1 style='text-align: center;'>JUSTIFICATIVAS BP</h1>", unsafe_allow_html=True)
+st.markdown(
+    """
+    <style>
+      /* ===== Scrollbar ===== */
+      ::-webkit-scrollbar {
+        width: 12px;
+        height: 12px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #f0f0f0;
+      }
+      ::-webkit-scrollbar-thumb {
+        background-color: #888;
+        border-radius: 6px;
+        border: 3px solid #f0f0f0;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background-color: #555;
+      }
+
+      /* ===== DataFrame container ===== */
+      /* Seleciona o grid interno que o st.dataframe renderiza */
+      .stDataFrame > div[role="grid"] {
+        width: 200px !important;      /* 90% da área disponível */
+        margin: 0 auto !important;  /* centraliza horizontalmente */
+        height: 800px !important;   /* define uma altura fixa */
+
+      }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+@st.cache_data()
+def fetch_data(sql):
+    results = session.sql(sql).collect()
+    if results:
+        return session.create_dataframe(results).to_pandas()
+    return pd.DataFrame()
+
+# Função para carregar os dados de forma concorrente
+@st.cache_data(show_spinner=False)
+def load_data_concurrently():
+    queries = {
+        "df_just_geral": "SELECT * FROM BASES_SPDO.DB_APP_JUST_BP.TB_JUST_GERAL",
+        "df_just_status": "SELECT * FROM BASES_SPDO.DB_APP_JUST_BP.TB_JUST_STATUS",
+        "df_just_jobs": "SELECT * FROM BASES_SPDO.DB_APP_JUST_BP.TB_JUST_JOBS",
+    }
+
+    data_results = {}
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future_to_key = {executor.submit(fetch_data, sql): key for key, sql in queries.items()}
+        for future in concurrent.futures.as_completed(future_to_key):
+            key = future_to_key[future]
+            data_results[key] = future.result()
+    return data_results
+
+@st.cache_data(show_spinner=False)
+def load_just_geral():
+    sql = "SELECT * FROM BASES_SPDO.DB_APP_JUST_BP.TB_JUST_GERAL"
     return session.sql(sql).to_pandas()
 
+@st.cache_data(show_spinner=False)
+def load_just_status():
+    sql = "SELECT * FROM BASES_SPDO.DB_APP_JUST_BP.TB_JUST_STATUS"
+    return session.sql(sql).to_pandas()
 
-uploaded_sazonalidade = st.sidebar.file_uploader(
-    "Atualizar tabela de sazonalidade:", 
-    type=["xlsx"]
-)
+@st.cache_data(show_spinner=False)
+def load_just_jobs():
+    sql = "SELECT * FROM BASES_SPDO.DB_APP_JUST_BP.TB_JUST_JOBS"
+    return session.sql(sql).to_pandas()
 
-if uploaded_sazonalidade is not None:
-    # Lê a primeira planilha, mantendo todos os campos como string
-    # Esse dado vai para a snow:
-    df = pd.read_excel(uploaded_sazonalidade, sheet_name=0, dtype=str)
+def create_list(df, coluna):
+    if df is not None and not df.empty:
+        return df[coluna].dropna().unique().tolist()
+    return []
+
+def df_to_list(df, coluna, label, placeholder, key=""):
+    if df is not None and not df.empty:
+        options = create_list(df, coluna)
+        return st.multiselect(f"{label}:", options=options, default=[], placeholder=placeholder, key=key)
+    else:
+        st.warning(f"Nenhum {label} disponível para seleção.")
+        return []
+
+def render_justificativas_tab(df_geral, df_status, df_jobs):
+    st.markdown("### Visualizar Justificativas com Filtros")
     
-    df.columns = [
-         'COD_EXT', 'COD_FGV',
-         'ESPEC_CLIENTE', 'UNIDADE',
-         'ALTA_OFERTA', 'REGULAR', 'BAIXA_OFERTA'
-    ]
-    # Até aqui
 
-    df_long = df.melt(
-        id_vars=['COD_EXT','COD_FGV','ESPEC_CLIENTE','UNIDADE'],
-        value_vars=['ALTA_OFERTA','REGULAR','BAIXA_OFERTA'],
-        var_name='OFERTA',
-        value_name='MESES'
-    )
+    filter_ano = st.session_state.get("filter_ano", [])
+    filter_mes = st.session_state.get("filter_mes", [])
+    filter_dec = st.session_state.get("filter_dec", [])
+    filter_coletor = st.session_state.get("filter_coletor", [])
+    filter_bp       = st.session_state.get("filter_bp", [])
+    filter_form     = st.session_state.get("filter_form", [])
+    filter_status   = st.session_state.get("filter_status", [])
+    filter_just = st.session_state.get("filter_just", [])
+    filter_jobs = st.session_state.get("filter_jobs", [])
+    select_last = st.session_state.get("select_last", False)
+    filter_pending = st.session_state.get("filter_pending", [])
 
-    df_long['MESES'] = (
-        df_long['MESES']
-        .str.replace('/', ', ')
-        .str.split(r',\s*')
-    )
     
-    df_long = df_long.explode('MESES')
-    df_long['MESES'] = df_long['MESES'].str.strip()
-    df_pivot = (
-        df_long
-        .pivot_table(
-            index=['COD_EXT','COD_FGV','ESPEC_CLIENTE','UNIDADE'],
-            columns='MESES',
-            values='OFERTA',
-            aggfunc='first'     
-        )
-        .reset_index()
-    )
-    meses_ordem = [
-        'Janeiro','Fevereiro','Março','Abril','Maio','Junho',
-        'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'
-    ]
-    df_pivot = df_pivot[
-        ['COD_EXT','COD_FGV','ESPEC_CLIENTE','UNIDADE']
-        + [m for m in meses_ordem if m in df_pivot.columns]
-    ]
-    df_pivot = df_pivot.rename(columns=lambda c: c.upper() if c in meses_ordem else c)
-    df_pivot = df_pivot.rename(columns={'MARÇO': 'MARCO'})
+    # Cria um DataFrame filtrado para as demais listas
+    df_filtered = df_geral.copy()
+    if filter_ano:
+        df_filtered = df_filtered[df_filtered["ANO"].isin(filter_ano)]
+    if filter_mes:
+        df_filtered = df_filtered[df_filtered["MES"].isin(filter_mes)]
+    if filter_dec:
+        df_filtered = df_filtered[df_filtered["DEC"].apply(
+            lambda x: any(d in x.split(";") for d in filter_dec) if isinstance(x, str) else False
+        )]
+    
+    # Conversão para datetime e formatação com hora (DD/MM/YYYY HH:MM:SS)
+    df_geral["DATA_JUST"] = pd.to_datetime(df_geral["DATA_JUST"], dayfirst=True)
 
-    snow_df = session.create_dataframe(df_pivot)
-    snow_df.write.mode("overwrite").save_as_table("BASES_SPDO.DB_APP_RELATORIO_PCRJ.TB_SAZONALIDADE")
-    st.success("Tabela de Sazonalidade atualizada com sucesso!")
-
-df_snow = load_sazonalidade()
-month_map = {
-    1: 'JANEIRO',   2: 'FEVEREIRO', 3: 'MARCO',    4: 'ABRIL',
-    5: 'MAIO',      6: 'JUNHO',     7: 'JULHO',    8: 'AGOSTO',
-    9: 'SETEMBRO', 10: 'OUTUBRO',  11: 'NOVEMBRO',12: 'DEZEMBRO'
-}
-current_month_col = month_map[datetime.date.today().month]
-
-# 2) seleciona apenas as colunas desejadas
-cols_to_show = ['COD_EXT','COD_FGV','ESPEC_CLIENTE','UNIDADE', current_month_col]
-df_mes_atual = df_snow[cols_to_show]
-
-# 3) exibe no Streamlit
-def show_item_warning(df):
-    df = df[['COD_EXT', 'COD_FGV', 'ESPEC_CLIENTE']].astype(str)
-    if df.empty:
-        return "Sem registros."
-    linhas = df.apply(lambda row: f"{row['ESPEC_CLIENTE'].capitalize()}", axis=1)
-    # uma quebra simples entre linhas:
-    return " - ".join(linhas.tolist())
-
-st.write(f"### Sazonalidade para {current_month_col}")
-def alert_custom(msg: str, bg: str = "#FFA500", text: str = "#000"):
-    html = f"""
-    <div style="
-        background-color: {bg};
-        color: {text};
-        padding: 0.75em 1em;
-        border-radius: 0.25em;
-        margin-bottom: 1em;
-    ">
-      <strong>Atenção:</strong> {msg}
-    </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
-
-col1, col2, col3 = st.columns(3)
-with col1.expander(f"Alta Oferta:"):
-    df_alt = df_mes_atual[df_mes_atual[current_month_col] == "ALTA_OFERTA"]
-    texto = show_item_warning(df_alt)
-    if texto:
-        alert_custom(texto, bg="#E89854", text="white")
-    else:
-        st.info("Sem registros.")
-
-with col2.expander("Média Oferta:"):
-    df_med = df_mes_atual[df_mes_atual[current_month_col] == "REGULAR"]
-    texto = show_item_warning(df_med)
-    if texto:
-        alert_custom(texto, bg="#E8CF54", text="black")
-    else:
-        st.info("Sem registros.")
-with col3.expander("Baixa Oferta:"):
-    df_baix = df_mes_atual[df_mes_atual[current_month_col] == "BAIXA_OFERTA"]
-    texto = show_item_warning(df_baix)
-    if texto:
-       alert_custom(texto, bg="#8CE854", text="black")
-    else:
-        st.info("Sem registros.")
-# ─────────── Cálculo dinâmico de validade e nome dos arquivos ───────────
-today = datetime.date.today()
-day = today.day
-month = today.month
-year = today.year
-
-if day <= 15:
-    # Segunda quinzena do mês atual: 16 até último dia do mês
-    start_date = datetime.date(year, month, 16)
-    last_day = calendar.monthrange(year, month)[1]
-    end_date = datetime.date(year, month, last_day)
-else:
-    # Primeira quinzena do próximo mês: 1 até 15
-    if month < 12:
-        next_month = month + 1
-        next_year = year
-    else:
-        next_month = 1
-        next_year = year + 1
-    start_date = datetime.date(next_year, next_month, 1)
-    end_date = datetime.date(next_year, next_month, 15)
-
-# Formatar “dd/mm/YYYY a dd/mm/YYYY”
-today_str = start_date.strftime("%d/%m/%Y")
-end_str = end_date.strftime("%d/%m/%Y")
-validade = f"{today_str} a {end_str}"
-
-current_year = today.year
-current_quartil = pd.to_datetime(today).quarter
-document_name = f"{current_year}Q{current_quartil}"
-
-uploaded = st.sidebar.file_uploader("Coloque o arquivo GENEROSCGM:", type="txt")
-if uploaded is not None:
-    # ─────────── Ler e tratar o TXT enviado ───────────
-    data = uploaded.read().decode("latin-1")
-    df = pd.read_csv(
-        StringIO(data),
-        sep="@",
-        header=None,
-        decimal=",",
-        engine="python",
+    df_last = (
+        df_geral
+        .sort_values("DATA_JUST")
+        .drop_duplicates(subset=["BP"], keep="last")
     )
 
-    df = df.drop(df.columns[[7, 9]], axis=1)
-    df.columns = [
-        "Código do Item",
-        "Dado1",
-        "Dado2",
-        "Dado3",
-        "Ano",
-        "Unidade",
-        "Preço Atacado",
-        "Preço Varejo",
-        "Preço Praticado",
-        "Produto",
-        "Descrição",
-    ]
-    df["Código do Item"] = df["Código do Item"].apply(mask_code)
-        
-    quartil_df, decreto_df = split_quartil_decreto(df)
+    concluido_statuses = [
+                "EMPRESA ENCERROU AS ATIVIDADE",
+                "EMPRESA FECHADA TEMPORARIAMENTE",
+                "NÃO DESEJA PARTICIPAR DA COLETA NESTE DEC",
+                "PREÇO/FALTA DIGITADO",
+                "RECUSA DEFINITIVA"
+            ]
+    concluido_bps = df_last.loc[
+        df_last["STATUS_PESQ"].isin(concluido_statuses),
+        "BP"
+    ].unique().tolist()
+    data_inicial_str = st.session_state.get("filter_data_inicial", "")
+    data_final_str   = st.session_state.get("filter_data_final", "")
 
-    tab_quartil, tab_decreto = st.tabs(["Quartil", "Decreto (Média)"])
-    with tab_quartil:
-        st.header("Quartil")
-        st.dataframe(quartil_df)
-    with tab_decreto:
-        st.header("Decreto (Média)")
-        st.dataframe(decreto_df)
+    if df_geral is not None and not df_geral.empty:
+        df_geral = df_geral[~df_geral["BP"].isin(concluido_bps)]
 
-    # ─────────── Preparar outputs para Excel e DOCX ───────────
-    quartil_out = prepare_df(quartil_df)
-    decreto_out = prepare_df(decreto_df)
+        df_form = df_geral.copy()
+        if filter_bp:
+            df_form = df_form[df_form["BP"].isin(filter_bp)]
+        if filter_jobs:
+            df_form = df_form[df_form["JOBS"].apply(
+                lambda x: any(d in x.split(";") for d in filter_jobs) if isinstance(x, str) else False
+            )]
+        if filter_form:
+            df_form = df_form[df_form["FORMULARIO_BP"].isin(filter_form)]
+        if filter_coletor:
+            df_form = df_form[df_form["COLETOR_BP"].isin(filter_coletor)]
+        if filter_status:
+            df_form = df_form[df_form["STATUS_PESQ"].isin(filter_status)]
+        if filter_mes:
+            df_form = df_form[df_form["MES"].isin(filter_mes)]
+        if filter_ano:
+            df_form = df_form[df_form["ANO"].isin(filter_ano)]
+        if filter_dec:
+            df_form = df_form[df_form["DEC"].apply(
+                lambda x: any(d in x.split(";") for d in filter_dec) if isinstance(x, str) else False
+            )]
+        if filter_just:
+            if "Todos" not in filter_just:
+                mask_just = pd.Series(False, index=df_form.index)
+                if "Preenchido" in filter_just:
+                    mask_just |= (
+                        df_form["JUSTIFICATIVA"].notna()
+                        & (df_form["JUSTIFICATIVA"].str.strip() != "")
+                    )
+                if "Não Preenchido" in filter_just:
+                    mask_just |= (
+                        df_form["JUSTIFICATIVA"].isna()
+                        | (df_form["JUSTIFICATIVA"].str.strip() == "")
+                    )
 
-    texto_cabecalho = (
-        "Prefeitura da Cidade do Rio de Janeiro\n"
-        "Tabela de Preços de Mercado de Gêneros Alimentícios\n"
-        f"Validade: {validade}"
-    )
-    texto_subcabecalho = (
-        "A tabela é referência para as aquisições realizadas pelos diversos órgãos do município "
-        "e tem o preço dos itens apurado conforme estabelecido no Art. 1º do Decreto nº 51.017/2022 "
-        "e alterações, que estabelece que o preço praticado pelo município e divulgado nesta tabela "
-        "seja um preço intermediário entre os preços no mercado de atacado e de varejo."
-    )
+                df_form = df_form[mask_just]
 
-    # ─────────── Gerar bytes de cada arquivo Excel (.xlsx) ───────────
-    bytes_excel_quartil = make_excel_with_headers(
-        quartil_out,
-        sheet="Quartil",
-        text1=texto_cabecalho,
-        text2=texto_subcabecalho,
-        name="",
-    )
-    bytes_excel_quartil_praticado = make_excel_with_headers(
-        quartil_out,
-        sheet="Quartil - Praticado",
-        text1=texto_cabecalho,
-        text2=texto_subcabecalho,
-        name="preço_praticado",
-    )
-    bytes_excel_decreto = make_excel_with_headers(
-        decreto_out,
-        sheet="Decreto",
-        text1=texto_cabecalho,
-        text2=texto_subcabecalho,
-        name="",
-    )
-    bytes_excel_decreto_praticado = make_excel_with_headers(
-        decreto_out,
-        sheet="Decreto - Praticado",
-        text1=texto_cabecalho,
-        text2=texto_subcabecalho,
-        name="preço_praticado",
-    )
+        date_pattern = re.compile(r"^\d{2}/\d{2}/\d{4}$")
+        try:
+            if data_inicial_str:
+                if not date_pattern.match(data_inicial_str):
+                    raise ValueError("Formato inválido")
+                start_date = datetime.strptime(data_inicial_str, "%d/%m/%Y")
+                df_form = df_form[df_form["DATA_JUST"] >= pd.Timestamp(start_date)]
+            if data_final_str:
+                if not date_pattern.match(data_final_str):
+                    raise ValueError("Formato inválido")
+                end_date = datetime.strptime(data_final_str, "%d/%m/%Y")
+                end_dt = pd.Timestamp(end_date) + pd.Timedelta(days=1)
+                df_form = df_form[df_form["DATA_JUST"] < end_dt]
+        except ValueError:
+            st.error("Formato de data inválido. Use apenas números e '/' no formato dd/mm/aaaa.")
+        if select_last:
+            df_form["DATA_JUST"] = pd.to_datetime(df_form["DATA_JUST"], dayfirst=True)
+            df_form = (
+                df_form
+                .sort_values("DATA_JUST")
+                .drop_duplicates(subset=["BP"], keep="last")
+            )
+        if filter_pending:
+            if "Concluído" in filter_pending and "Pendente" not in filter_pending:
+                df_form = df_form[df_form["STATUS_PESQ"].isin(concluido_statuses)]
+            elif "Pendente" in filter_pending and "Concluído" not in filter_pending:
+                df_form = df_form[~df_form["STATUS_PESQ"].isin(concluido_statuses)]
 
-    # ─────────── Gerar bytes de cada arquivo DOCX (.docx) ───────────
-    bytes_docx_quartil = generate_full_doc(quartil_df, validade)
-    bytes_docx_quartil_praticado = generate_price_only_doc(quartil_df, validade)
-
-    bytes_docx_decreto = generate_full_doc(decreto_df, validade)
-    bytes_docx_decreto_praticado = generate_price_only_doc(decreto_df, validade)
-
-     # ─────────── Criar ZIP em memória (BytesIO) e incluir todos os arquivos ───────────
-    zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        # 1) Excel (.xlsx)
-        zf.writestr(f"Quartil - GENALIM_{document_name}.xlsx", bytes_excel_quartil)
-        zf.writestr(
-            f"Quartil - PRE_TAB_{document_name}.xlsx",
-            bytes_excel_quartil_praticado,
-        )
-        zf.writestr(f"Contrato - GENALIM_{document_name}.xlsx", bytes_excel_decreto)
-        zf.writestr(
-            f"Contrato - PRE_TAB_{document_name}.xlsx",
-            bytes_excel_decreto_praticado,
-        )
-
-        # 2) DOCX (.docx)
-        zf.writestr(f"Quartil - GENALIM_{document_name}.docx", bytes_docx_quartil)
-        zf.writestr(
-            f"Quartil - PRE_TAB_{document_name}.docx",
-            bytes_docx_quartil_praticado,
-        )
-        zf.writestr(f"Contrato - GENALIM_{document_name}.docx", bytes_docx_decreto)
-        zf.writestr(
-            f"Contrato - PRE_TAB_{document_name}.docx",
-            bytes_docx_decreto_praticado,
-        )
+        # Aqui a formatação inclui data e horário
+        if "DATA_JUST" in df_form.columns and not df_form.empty:
+            df_form["DATA_JUST"] = df_form["DATA_JUST"].dt.strftime('%d/%m/%Y %H:%M:%S')
+        else:
+            # Se o DataFrame estiver vazio ou a coluna não existir, cria a coluna com valores vazios
+            df_form["DATA_JUST"] = ""
+        if "ANO" in df_form.columns and not df_form.empty:
+             df_form["ANO"] = df_form["ANO"].astype(str)
+        else:
+            df_form["ANO"] = ""
+        if "BP" in df_form.columns and not df_form.empty:
+             df_form["BP"] = df_form["BP"].astype(str)
+        else:
+            df_form["BP"] = ""
 
         
-    # Voltar o ponteiro para o início do buffer
-    zip_buffer.seek(0)
+        
+        all_bps = df_form["BP"].dropna().unique().tolist()
 
-    # ─────────── Botão de download único para o ZIP com tudo dentro ───────────
-    st.download_button(
-        label="📥 Baixar todos os Relatórios (Zip)",
-        data=zip_buffer,
-        file_name=f"Relatorios_{document_name}.zip",
-        mime="application/zip",
+        # 2) Quais BPs têm ao menos um registro 'trabalhado'
+        worked_bps = (
+            df_form[df_form["STATUS_PESQ"] != "AINDA NÃO TRABALHADO"]
+            ["BP"].dropna().unique().tolist()
+        )
+
+        # 3) Os que sobraram são não trabalhados
+        not_worked_bps = [bp for bp in all_bps if bp not in worked_bps]
+
+        # 4) Contagens
+        total_bps = len(all_bps)
+        num_worked = len(worked_bps)
+        num_not_worked = len(not_worked_bps)
+
+        st.write(f"Total de BPs: **{total_bps}**  |  BPs Trabalhados: **{num_worked}**  |  BPs Não Trabalhados: **{num_not_worked}**")
+     
+        colunas = [
+            "ANO", "MES", "DEC", "BP", "DATA_JUST", "COLETOR_BP", "FORMULARIO_BP",
+            "JOBS", "COLETOR_PESQ", "FORMULARIO_PESQ", "STATUS_PESQ", "JUSTIFICATIVA"
+        ]
+        
+        
+        for col in colunas:
+            if col not in df_form.columns:
+                df_form[col] = ""
+        df_form = df_form[colunas]
+
+
+        df_sorted = (
+            df_form
+            .sort_values(by=["DATA_JUST", "BP"], ascending=[False, True])
+            .reset_index(drop=True)
+        )
+
+        # 2) Exibe via data_editor, escondendo o índice nativo:
+        st.data_editor(
+            df_sorted,
+            hide_index=True,
+            disabled=True,
+            use_container_width=True
+        )
+
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df_form.to_excel(writer, index=False, sheet_name="Justificativas")
+        output.seek(0)
+        st.download_button(
+            label="Baixar lista de justificativas",
+            data=output,
+            file_name="justificativas.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        st.error("Nenhum dado encontrado.")
+
+def render_adicionar_justificativa_tab(df_geral, df_status):
+    st.markdown("### Formulário de Justificativa")
+    
+    
+    selected_anos   = st.session_state.get("filter_ano", [])
+    selected_mes    = st.session_state.get("filter_mes", [])
+    selected_decs   = st.session_state.get("filter_dec", [])
+    selected_colectors= st.session_state.get("filter_coletor", [])
+    selected_bps     = st.session_state.get("filter_bp", [])
+    selected_forms   = st.session_state.get("filter_form", [])
+    selected_status_pesq = st.session_state.get("filter_status", [])
+    selected_pending = st.session_state.get("filter_pending", [])
+    # Filtrar o df_geral com base nos filtros de Ano, Mês e Dec
+    df_filtered = df_geral.copy()
+    if selected_anos:
+        df_filtered = df_filtered[df_filtered["ANO"].isin(selected_anos)]
+    if selected_mes:
+        df_filtered = df_filtered[df_filtered["MES"].isin(selected_mes)]
+    if selected_decs:
+        df_filtered = df_filtered[df_filtered["DEC"].apply(
+            lambda x: any(d in x.split(";") for d in selected_decs) if isinstance(x, str) else False
+        )]
+    
+    # Gere as listas dinâmicas para Coletores e BP a partir do DataFrame filtrado
+    colector_list = create_list(df_filtered, "COLETOR_BP")
+    colector_list = [item for item in colector_list if item != 'None']
+    
+    # Outras listas que não dependem dos filtros continuam vindo do df original
+    option_list = create_list(df_geral, "FORMULARIO_BP")
+    status_justify_list = create_list(df_status, "STATUS")
+    
+    # Agrega todos os filtros (inclusive os de Ano, Mês e Dec) para filtrar o DataFrame de formulários
+    selected_filters = [
+        ("ANO", selected_anos),
+        ("MES", selected_mes),
+        ("DEC", selected_decs),
+        ("COLETOR_BP", selected_colectors),
+        ("BP", selected_bps),
+        ("FORMULARIO_BP", selected_forms),
+        ("STATUS_PESQ", selected_status_pesq)
+    ]
+    
+    # Se nenhum filtro for selecionado, emite aviso
+    if not any(selected for _, selected in selected_filters):
+        st.warning("Por favor, selecione ao menos um filtro para visualizar os formulários.")
+        return
+
+    df_form = df_geral.copy()
+    for coluna, selected in selected_filters:
+        if not selected:
+            continue
+        if coluna == "DEC":
+            df_form = df_form[df_form["DEC"].apply(
+                lambda x: any(d in x.split(";") for d in selected) if isinstance(x, str) else False
+            )]
+        else:
+            df_form = df_form[df_form[coluna].isin(selected)]
+
+    selected_pending = st.session_state.get("filter_pending", [])
+    if selected_pending:
+        concluido_statuses = [
+            "EMPRESA ENCERROU AS ATIVIDADE",
+                "EMPRESA FECHADA TEMPORARIAMENTE",
+                "NÃO DESEJA PARTICIPAR DA COLETA NESTE DEC",
+                "PREÇO/FALTA DIGITADO",
+                "RECUSA DEFINITIVA"
+        ]
+        if "Concluído" in selected_pending and "Pendente" not in selected_pending:
+            df_form = df_form[df_form["STATUS_PESQ"].isin(concluido_statuses)]
+        elif "Pendente" in selected_pending and "Concluído" not in selected_pending:
+            df_form = df_form[~df_form["STATUS_PESQ"].isin(concluido_statuses)]
+    df_form["DATA_JUST"] = pd.to_datetime(df_form["DATA_JUST"], errors="coerce")
+    df_form = df_form.sort_values("DATA_JUST", na_position="first")
+    
+    with st.spinner("Processando dados..."):
+        df_latest = df_form.groupby(["BP", "MES"], as_index=False).last()
+
+        # lista de status que marcam “concluído”
+        concluido_statuses = [
+            "EMPRESA ENCERROU AS ATIVIDADE",
+                "EMPRESA FECHADA TEMPORARIAMENTE",
+                "NÃO DESEJA PARTICIPAR DA COLETA NESTE DEC",
+                "PREÇO/FALTA DIGITADO",
+                "RECUSA DEFINITIVA"
+        ]
+        # remove os que já estão concluídos
+        df_latest = df_latest[~df_latest["STATUS_PESQ"].isin(concluido_statuses)]
+        
+    if df_latest.empty:
+        st.info("Não há formulários para preencher.")
+        return
+
+    all_bps = df_form["BP"].dropna().unique().tolist()
+
+    # 2) Quais BPs têm ao menos um registro 'trabalhado'
+    worked_bps = (
+        df_form[df_form["STATUS_PESQ"] != "AINDA NÃO TRABALHADO"]
+        ["BP"].dropna().unique().tolist()
     )
+
+    # 3) Os que sobraram são não trabalhados
+    not_worked_bps = [bp for bp in all_bps if bp not in worked_bps]
+
+    # 4) Contagens
+    total_bps = len(all_bps)
+    num_worked = len(worked_bps)
+    num_not_worked = len(not_worked_bps)
+
+    st.write(f"Total de BPs: **{total_bps}**  |  BPs Trabalhados: **{num_worked}**  |  BPs Não Trabalhados: **{num_not_worked}**")
+
+    page_size = 50
+    st.markdown("#### Relação de BPs:")
+    total_pages = max(1, math.ceil(len(df_latest) / page_size))
+    if "current_page_setas" not in st.session_state:
+        st.session_state.current_page_setas = 1
+    
+    if st.session_state.current_page_setas > total_pages:
+        st.session_state.current_page_setas = total_pages
+        st.rerun()
+    
+    cols = st.columns([2, 3, 1])
+    
+    if cols[0].button("◀️", key="prev_page"):
+        st.session_state.current_page_setas -= 1
+
+    if cols[2].button("▶️", key="next_page"):
+        st.session_state.current_page_setas += 1
+        
+    st.write(f"Página **{st.session_state.current_page_setas}** de **{total_pages}**")
+
+    
+    current_page = st.session_state.current_page_setas
+    start_index = (current_page - 1) * page_size
+    end_index = start_index + page_size
+    df_page = df_latest.iloc[start_index:end_index]
+    
+
+    df_geral["DATA_JUST"] = df_geral["DATA_JUST"].dt.tz_localize('UTC').dt.tz_convert('America/Sao_Paulo')
+    df_form["DATA_JUST"] = df_form["DATA_JUST"].dt.strftime('%d/%m/%Y %H:%M:%S')
+    
+    # Agrupa os campos de cada formulário em um st.form com clear_on_submit=True
+    for index, row in df_page.iterrows():
+        ultima_atualizacao = (
+            pd.to_datetime(row['DATA_JUST'], utc=True)
+            .strftime("%d/%m/%Y %H:%M:%S")
+            if pd.notna(row['DATA_JUST']) else "Sem data"
+        )
+        ultima_just = (
+            row['JUSTIFICATIVA'] if pd.notna(row['JUSTIFICATIVA']) else "Sem justificativa"
+        )
+        
+        with st.form(key=f"form_{index}", clear_on_submit=True):
+            st.markdown(
+                f"**BP:** {row['BP']} | **Coletor:** {row['COLETOR_BP']} | "
+                f"**Formulário:** {row['FORMULARIO_BP']} | **Mês:** {row['MES']} | "
+                f"**Dec:** {row['DEC']} | **Última atualização:** {ultima_atualizacao} | "
+                f"**Justificativa atual:** {ultima_just}"
+            )
+            col1, col2, col3 = st.columns(3)
+            form_pesq_val = col1.selectbox(
+                "Formulário Pesq.:", options=["", *option_list],
+                key=f"form_pesq-{index}"
+            )
+            form_status_val = col2.selectbox(
+                "Status:", options=["", *status_justify_list],
+                key=f"form_status-{index}"
+            )
+            form_coletor_val = col3.selectbox(
+                "Coletor Pesq.:", options=["", *colector_list],
+                key=f"form_coletor-{index}"
+            )
+            form_just_val = st.text_area(
+                "Justificativa:", max_chars=500, key=f"form_just-{index}"
+            )
+            
+            salvar = st.form_submit_button("Salvar justificativa")
+            if salvar:
+                # 1) validação mínima
+                if not (form_pesq_val and form_status_val and form_coletor_val):
+                    st.warning("Preencha Formulário Pesq., Status e Coletor antes de salvar.")
+                else:
+                    # 2) monta o SQL
+                    fuso = pytz.timezone("America/Sao_Paulo")
+                    agora = datetime.now().astimezone(fuso).strftime("%Y-%m-%d %H:%M:%S")
+
+                    if pd.isna(row["DATA_JUST"]):
+                        sql = f"""
+                        UPDATE BASES_SPDO.DB_APP_JUST_BP.TB_JUST_GERAL
+                           SET DATA_JUST = '{agora}',
+                               COLETOR_PESQ = '{form_coletor_val}',
+                               FORMULARIO_PESQ = '{form_pesq_val}',
+                               STATUS_PESQ = '{form_status_val}',
+                               JUSTIFICATIVA = '{form_just_val}',
+                               ID_JUST = 1
+                         WHERE BP = '{row['BP']}'
+                           AND MES = '{row['MES']}'
+                           AND DATA_JUST IS NULL
+                        """
+                    else:
+                        new_id = 1 + (int(row.get("ID_JUST")) if pd.notna(row.get("ID_JUST")) else 0)
+                        sql = f"""
+                        INSERT INTO BASES_SPDO.DB_APP_JUST_BP.TB_JUST_GERAL
+                        (ANO, MES, DATA_JUST, DEC, BP, COLETOR_BP, FORMULARIO_BP, JOBS,
+                         COLETOR_PESQ, FORMULARIO_PESQ, STATUS_PESQ, JUSTIFICATIVA, ID_JUST)
+                        VALUES
+                        ('{row["ANO"]}', '{row["MES"]}', '{agora}', '{row["DEC"]}',
+                         '{row["BP"]}', '{row["COLETOR_BP"]}', '{row["FORMULARIO_BP"]}',
+                         '{row["JOBS"]}', '{form_coletor_val}', '{form_pesq_val}',
+                         '{form_status_val}', '{form_just_val}', '{new_id}')
+                        """
+
+                    # 3) executa e limpa cache
+                    try:
+                        session.sql(sql).collect()
+                        st.cache_data.clear()
+                        verify_sql = f"""
+                        SELECT 1 
+                            FROM BASES_SPDO.DB_APP_JUST_BP.TB_JUST_GERAL 
+                            WHERE BP = '{row['BP']}' 
+                            AND MES = '{row['MES']}' 
+                            AND FORMULARIO_PESQ = '{form_pesq_val}'
+                            AND STATUS_PESQ = '{form_status_val}'
+                            AND COLETOR_PESQ = '{form_coletor_val}'
+                            AND JUSTIFICATIVA = '{form_just_val}'
+                        """
+                        verif = session.sql(verify_sql).collect()
+                        if verif:
+                            st.success(f"Justificativa de {row['BP']} salva com sucesso!")
+                            st.rerun()
+                        else:
+                            st.error("Ops… não encontrei o registro salvo. Verifique seus filtros ou tente novamente.")
+                    except Exception as e:
+                        st.error(f"Erro ao salvar: {e}")
+                
+session.sql("USE WAREHOUSE SPDO").collect()
+
+st.logo('https://ciclo-economico-ibre.fgv.br/logo_ibre.png')
+
+df_geral  = load_just_geral() 
+df_status = load_just_status() 
+df_jobs   = load_just_jobs()  
+with st.sidebar:
+    FILTER_KEYS = [
+            "filter_coletor","filter_bp","filter_form",
+            "filter_status","filter_just","filter_jobs","filter_pending",
+            "selected_colectors","selected_bps","selected_forms",
+            "selected_status_pesq","selected_tipo_coleta"]
+    def clear_filters():
+        for key in FILTER_KEYS:
+            # garanta que exista, e coloque o valor padrão
+            st.session_state[key] = []
+        
+            
+    st.button("🔄 Limpar Filtros",on_click=clear_filters)
+    
+    st.markdown("#### Filtros Gerais:")
+    st.toggle(
+        "Última atualização p/ cada BP",
+        key="select_last",
+        value=True,
+        help="Ao selecionar essa opção, pode-se ver a ultima atualização de cada BP. Ao tirar essa opção, é possivel ver o histórico dos BPs ao longo do DEC."
+    )
+    ano_list  = create_list(df_geral, "ANO")
+    ano_atual  = datetime.now().year
+    st.multiselect(
+        "Ano:",
+        options=ano_list,
+        default=[ano_atual] if ano_atual in ano_list else [],
+        key="filter_ano",
+        placeholder="Selecione os anos"
+    )
+
+    # --- Mês ---
+    meses_map = {1:"JANEIRO",2:"FEVEREIRO",3:"MARÇO",4:"ABRIL",
+                 5:"MAIO",6:"JUNHO",7:"JULHO",8:"AGOSTO",
+                 9:"SETEMBRO",10:"OUTUBRO",11:"NOVEMBRO",12:"DEZEMBRO"}
+    mes_list  = create_list(df_geral, "MES")
+    mes_atual = meses_map[datetime.now().month]
+    st.multiselect(
+        "Mês:",
+        options=mes_list,
+        default=[mes_atual] if mes_atual in mes_list else [],
+        key="filter_mes",
+        placeholder="Selecione os meses"
+    )
+
+    # --- Decêndio ---
+    all_dec = sorted(set(";".join(df_geral["DEC"].dropna()).split(";"))) \
+              if "DEC" in df_geral.columns else []
+    day = datetime.now().day
+    default_dec = ["1"] if day <= 10 else (["2"] if day <= 20 else ["3"])
+    st.multiselect(
+        "Dec:",
+        options=all_dec,
+        default=[d for d in default_dec if d in all_dec],
+        key="filter_dec",
+        placeholder="Selecione os decêndios"
+    )
+    colector_opts = sorted(create_list(df_geral, "COLETOR_BP"))
+    st.multiselect(
+        "Coletor:",
+        options=colector_opts,
+        key="filter_coletor",
+        placeholder="Selecione os coletores"
+    )
+    
+    # --- Verificador de Pendência ---
+    st.multiselect(
+        "Situação da Coleta:",
+        options=["Pendente","Concluído"],
+        key="filter_pending",
+        placeholder="Selecione a situação da coleta"
+    )
+    # --- BP ---
+    bp_opts = sorted(create_list(df_geral, "BP"))
+    st.multiselect(
+        "BP:",
+        options=bp_opts,
+        key="filter_bp",
+        placeholder="Selecione os BPs"
+    )
+
+    # --- Formulário ---
+    form_opts = sorted(create_list(df_geral, "FORMULARIO_BP"))
+    st.multiselect(
+        "Formulário:",
+        options=form_opts,
+        key="filter_form",
+        placeholder="Selecione os formulários"
+    )
+
+    # --- Status ---
+    status_opts = sorted(create_list(df_status, "STATUS"))
+    st.multiselect(
+        "Status:",
+        options=status_opts,
+        key="filter_status",
+        placeholder="Selecione os status"
+    )
+
+    
+    st.markdown("#### Filtros da Aba “Visualizar Justificativas”:")
+    st.multiselect(
+        "Justificativa:",
+        options=["Todos", "Preenchido", "Não Preenchido"],
+        key="filter_just",
+        placeholder="Selecione justificativa"
+    )
+    # Jobs
+    jobs_opts = sorted(create_list(df_jobs, "JOBS"))
+    st.multiselect(
+        "Jobs:",
+        options=jobs_opts,
+        key="filter_jobs",
+        placeholder="Selecione os jobs"
+    )
+    st.text_input(
+    "Data de Justificativa Inicial (dd/mm/aaaa):",
+    value=st.session_state.get("filter_data_inicial", ""),
+    key="filter_data_inicial",
+    placeholder="DD/MM/AAAA"
+    )
+    st.text_input(
+        "Data de Justificativa Final (dd/mm/aaaa):",
+        value=st.session_state.get("filter_data_final", ""),
+        key="filter_data_final",
+        placeholder="DD/MM/AAAA"
+    )
+        
+
+tabs = st.tabs(["Visualizar Justificativas", "Adicionar Justificativa"])
+
+with tabs[0]:
+     
+    render_justificativas_tab(df_geral, df_status, df_jobs)
+
+with tabs[1]:
+
+    render_adicionar_justificativa_tab(df_geral, df_status)
